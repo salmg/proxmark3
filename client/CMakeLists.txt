@@ -237,6 +237,10 @@ add_executable(
 )
 
 target_compile_options(proxmark3 PUBLIC -Wall -Werror -O3)
+# Mingw uses by default Microsoft printf, we want the GNU printf
+# and setting _ISOC99_SOURCE sets internally __USE_MINGW_ANSI_STDIO=1
+# FTR __USE_MINGW_ANSI_STDIO seems deprecated in Mingw32
+# but not Mingw64 https://fr.osdn.net/projects/mingw/lists/archive/users/2019-January/000199.html
 target_compile_definitions(proxmark3 PRIVATE _ISOC99_SOURCE)
 
 target_include_directories(proxmark3 PRIVATE
