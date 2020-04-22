@@ -237,6 +237,7 @@ add_executable(
 )
 
 target_compile_options(proxmark3 PUBLIC -Wall -Werror -O3)
+target_compile_definitions(proxmark3 PRIVATE _ISOC99_SOURCE)
 
 target_include_directories(proxmark3 PRIVATE
         ../common
