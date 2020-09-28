@@ -403,9 +403,7 @@ void RunMod(void) {
                             uint8_t finished[2] = {0x6f, 0x00};
                             memcpy(&dynamic_response_info.response[1], finished, sizeof(finished));
                             dynamic_response_info.response_n = sizeof(finished) + 1;
-                            if (prevCmd == 5) {
-                                prevCmd = 0;
-                            }
+                            prevCmd++;
                         }
                     } else {
                         DbpString(_YELLOW_("!!") "Received unknown command!");
@@ -436,6 +434,11 @@ void RunMod(void) {
 
                 if (p_response != NULL) {
                     EmSendPrecompiledCmd(p_response);
+                    if (prevCmd >= 6) {
+                        prevCmd = 0;
+                        for (uint8_t i = 0; i < 2; i++) SpinDelay(1000);
+                        DbpString(_YELLOW_("!!") "Ready for next emulation!");
+                    }
                 }
             }
             switch_off();
