@@ -10,9 +10,25 @@
     {
         "AID": "D3494F",
         "Vendor": "HID",
-        "Country": "United States",
+        "Country": "US",
         "Name": "SIO DESFire Ev1",
-        "Description": "",
+        "Description": "Field Encoder",
+        "Type": "pacs"
+    },
+    {
+        "AID": "D9494F",
+        "Vendor": "HID",
+        "Country": "US",
+        "Name": "Access control",
+        "Description": "Field Encoder",
+        "Type": "pacs"
+    },
+    {
+        "AID": "53494F",
+        "Vendor": "HID",
+        "Country": "US",
+        "Name": "Access control",
+        "Description": "HID Factory",
         "Type": "pacs"
     },
     {
@@ -46,7 +62,7 @@
         "Name": "Legic",
         "Description": "(FID 02: EF-CONF)",
         "Type": ""
-    },   
+    },
     {
         "AID": "578000",
         "Vendor": "NORTIC",
@@ -122,17 +138,17 @@ FFFFFF General Issuer Information (FIDs 00: MAD Version; 01: Card Holder; 02: Ca
     },
     {
         "AID": "F518F0",
-        "Vendor": "TELENOT",
+        "Vendor": "Telenot Electronic GmbH",
         "Country": "DE",
-        "Name": "TELENOT Tag",
+        "Name": "Telenot Tag",
         "Description": "",
         "Type": "alarm system"
     },
     {
         "AID": "F38091",
-        "Vendor": "MICROTRONIC",
+        "Vendor": "Microtronic AG",
         "Country": "CH",
-        "Name": "MICROTRONIC Tag",
+        "Name": "Microtronic Tag",
         "Description": "",
         "Type": "payment system"
     },
@@ -256,5 +272,69 @@ FFFFFF General Issuer Information (FIDs 00: MAD Version; 01: Card Holder; 02: Ca
         "Name": "BAT",
         "Description": "",
         "Type": "transport"
-    },    
-}
+    },
+    {
+        "AID": "05845F",
+        "Vendor": "InterCard GmbH Kartensysteme",
+        "Country": "DE",
+        "Name": "InterCard",
+        "Description": "Campus Card",
+        "Type": "student"
+    },
+     {
+        "AID": "15845F",
+        "Vendor": "InterCard GmbH Kartensysteme",
+        "Country": "DE",
+        "Name": "InterCard",
+        "Description": "Campus Card",
+        "Type": "student"
+    },
+     {
+        "AID": "25845F",
+        "Vendor": "InterCard GmbH Kartensysteme",
+        "Country": "DE",
+        "Name": "InterCard",
+        "Description": "Campus Card",
+        "Type": "student"
+    },
+    {
+        "AID": "35845F",
+        "Vendor": "InterCard GmbH Kartensysteme",
+        "Country": "DE",
+        "Name": "InterCard",
+        "Description": "Campus Card",
+        "Type": "student"
+    },
+    {
+        "AID": "55845F",
+        "Vendor": "InterCard GmbH Kartensysteme",
+        "Country": "DE",
+        "Name": "InterCard",
+        "Description": "Campus Card",
+        "Type": "student"
+    },
+    {
+        "AID": "65845F",
+        "Vendor": "InterCard GmbH Kartensysteme",
+        "Country": "DE",
+        "Name": "InterCard",
+        "Description": "Campus Card",
+        "Type": "student"
+    },
+    {
+        "AID": "75845F",
+        "Vendor": "InterCard GmbH Kartensysteme",
+        "Country": "DE",
+        "Name": "InterCard",
+        "Description": "Campus Card",
+        "Type": "student"
+    },
+    {
+        "AID": "C26001",
+        "Vendor": "CAR2GO",
+        "Country": "DE",
+        "Name": "MemberCard",
+        "Description": "CAR2GO - Member Card",
+        "Type": "carsharing"
+    }
+]

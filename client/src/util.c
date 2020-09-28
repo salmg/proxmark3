@@ -30,6 +30,8 @@
 uint8_t g_debugMode = 0;
 // global client disable logging variable
 uint8_t g_printAndLog = PRINTANDLOG_PRINT | PRINTANDLOG_LOG;
+// global client tell if a pending prompt is present
+bool g_pendingPrompt = false;
 
 #ifdef _WIN32
 #include <windows.h>
@@ -80,55 +82,6 @@ int kbd_enter_pressed(void) {
 }
 #endif
 
-// log files functions
-
-// open, appped and close logfile
-void AddLogLine(const char *fn, const char *data, const char *c) {
-    FILE *f = NULL;
-    char filename[FILE_PATH_SIZE] = {0x00};
-    int len = 0;
-
-    len = strlen(fn);
-    if (len > FILE_PATH_SIZE)
-        len = FILE_PATH_SIZE;
-    memcpy(filename, fn, len);
-
-    f = fopen(filename, "a");
-    if (!f) {
-        PrintAndLogEx(ERR, "Could not append log file" _YELLOW_("%s"), filename);
-        return;
-    }
-
-    fprintf(f, "%s", data);
-    fprintf(f, "%s\n", c);
-    fflush(f);
-    fclose(f);
-}
-
-void AddLogHex(const char *fn, const char *extData, const uint8_t *data, const size_t len) {
-    AddLogLine(fn, extData, sprint_hex(data, len));
-}
-
-void AddLogUint64(const char *fn, const char *data, const uint64_t value) {
-    char buf[20] = {0};
-    memset(buf, 0x00, sizeof(buf));
-    sprintf(buf, "%016" PRIx64 "", value);
-    AddLogLine(fn, data, buf);
-}
-
-void AddLogCurrentDT(const char *fn) {
-    char buf[20] = {0};
-    struct tm *ct, tm_buf;
-    time_t now = time(NULL);
-#if defined(_WIN32)
-    ct = gmtime_s(&tm_buf, &now) == 0 ? &tm_buf : NULL;
-#else
-    ct = gmtime_r(&now, &tm_buf);
-#endif
-    strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", ct);
-    AddLogLine(fn, "\nanticollision: ", buf);
-}
-
 // create filename on hex uid.
 // param *fn   -  pointer to filename char array
 // param *uid  -  pointer to uid byte array
@@ -143,6 +96,7 @@ void FillFileNameByUID(char *filenamePrefix, const uint8_t *uid, const char *ext
 
     for (int j = 0; j < uidlen; j++)
         sprintf(filenamePrefix + len + j * 2, "%02X", uid[j]);
+
     strcat(filenamePrefix, ext);
 }
 
@@ -195,9 +149,9 @@ void hex_to_buffer(const uint8_t *buf, const uint8_t *hex_data, const size_t hex
     size_t i;
     memset(tmp, 0x00, hex_max_len);
 
-    size_t maxLen = (hex_len > hex_max_len) ? hex_max_len : hex_len;
+    size_t max_len = (hex_len > hex_max_len) ? hex_max_len : hex_len;
 
-    for (i = 0; i < maxLen; ++i, tmp += 2 + spaces_between) {
+    for (i = 0; i < max_len; ++i, tmp += 2 + spaces_between) {
         sprintf(tmp, (uppercase) ? "%02X" : "%02x", (unsigned int) hex_data[i]);
 
         for (size_t j = 0; j < spaces_between; j++)
@@ -205,10 +159,12 @@ void hex_to_buffer(const uint8_t *buf, const uint8_t *hex_data, const size_t hex
     }
 
     i *= (2 + spaces_between);
-    size_t minStrLen = min_str_len > i ? min_str_len : 0;
-    if (minStrLen > hex_max_len)
-        minStrLen = hex_max_len;
-    for (; i < minStrLen; i++, tmp += 1)
+
+    size_t mlen = min_str_len > i ? min_str_len : 0;
+    if (mlen > hex_max_len)
+        mlen = hex_max_len;
+
+    for (; i < mlen; i++, tmp += 1)
         sprintf(tmp, " ");
 
     // remove last space
@@ -221,26 +177,27 @@ void print_hex(const uint8_t *data, const size_t len) {
     if (data == NULL || len == 0) return;
 
     for (size_t i = 0; i < len; i++)
-        printf("%02x ", data[i]);
-    printf("\n");
+        PrintAndLogEx(NORMAL, "%02x " NOLF, data[i]);
+
+    PrintAndLogEx(NORMAL, "");
 }
 
 void print_hex_break(const uint8_t *data, const size_t len, uint8_t breaks) {
     if (data == NULL || len == 0) return;
 
     int rownum = 0;
-    printf("[%02d] | ", rownum);
+    PrintAndLogEx(NORMAL, "[%02d] | " NOLF, rownum);
     for (size_t i = 0; i < len; ++i) {
 
-        printf("%02X ", data[i]);
+        PrintAndLogEx(NORMAL, "%02X " NOLF, data[i]);
 
         // check if a line break is needed
         if (breaks > 0 && !((i + 1) % breaks) && (i + 1 < len)) {
             ++rownum;
-            printf("\n[%02d] | ", rownum);
+            PrintAndLogEx(NORMAL, "\n[%02d] | " NOLF, rownum);
         }
     }
-    printf("\n");
+    PrintAndLogEx(NORMAL, "");
 }
 
 char *sprint_hex(const uint8_t *data, const size_t len) {
@@ -274,7 +231,7 @@ char *sprint_bin_break(const uint8_t *data, const size_t len, const uint8_t brea
     if (breaks > 0 && len % breaks != 0)
         rowlen = (len + (len / breaks) > MAX_BIN_BREAK_LENGTH) ? MAX_BIN_BREAK_LENGTH : len + (len / breaks);
 
-    //printf("(sprint_bin_break) rowlen %d\n", rowlen);
+    //PrintAndLogEx(NORMAL, "(sprint_bin_break) rowlen %d", rowlen);
 
     static char buf[MAX_BIN_BREAK_LENGTH]; // 3072 + end of line characters if broken at 8 bits
     //clear memory
@@ -312,7 +269,7 @@ void sprint_bin_break_ex(uint8_t *src, size_t srclen, char *dest , uint8_t break
     else
         rowlen = ( len+(len/breaks) > MAX_BIN_BREAK_LENGTH ) ? MAX_BIN_BREAK_LENGTH : len+(len/breaks);
 
-    printf("(sprint_bin_break) rowlen %d\n", rowlen);
+    PrintAndLogEx(NORMAL, "(sprint_bin_break) rowlen %d", rowlen);
 
     // 3072 + end of line characters if broken at 8 bits
     dest = (char *)calloc(MAX_BIN_BREAK_LENGTH, sizeof(uint8_t));
@@ -348,14 +305,17 @@ char *sprint_hex_ascii(const uint8_t *data, const size_t len) {
     memset(buf, 0x00, UTIL_BUFFER_SIZE_SPRINT);
     size_t max_len = (len > 1010) ? 1010 : len;
 
-    snprintf(tmp, UTIL_BUFFER_SIZE_SPRINT, "%s | ", sprint_hex(data, max_len));
+    snprintf(tmp, UTIL_BUFFER_SIZE_SPRINT, "%s| ", sprint_hex(data, max_len));
 
     size_t i = 0;
     size_t pos = (max_len * 3) + 2;
+
     while (i < max_len) {
+
         char c = data[i];
         if ((c < 32) || (c == 127))
             c = '.';
+
         sprintf(tmp + pos + i, "%c",  c);
         ++i;
     }
@@ -727,7 +687,7 @@ int hextobinarray(char *target, char *source) {
         else if (x >= 'A' && x <= 'F')
             x -= 'A' - 10;
         else {
-            printf("Discovered unknown character %c %d at idx %d of %s\n", x, x, (int16_t)(source - start), start);
+            PrintAndLogEx(INFO, "(hextobinarray) discovered unknown character %c %d at idx %d of %s", x, x, (int16_t)(source - start), start);
             return 0;
         }
         // output
@@ -823,12 +783,6 @@ void wiegand_add_parity_swapped(uint8_t *target, uint8_t *source, uint8_t length
     *(target) = GetParity(source + length / 2, EVEN, length / 2);
 }
 
-// xor two arrays together for len items.  The dst array contains the new xored values.
-void xor(unsigned char *dst, unsigned char *src, size_t len) {
-    for (; len > 0; len--, dst++, src++)
-        *dst ^= *src;
-}
-
 // Pack a bitarray into a uint32_t.
 uint32_t PackBits(uint8_t start, uint8_t len, uint8_t *bits) {
 
@@ -843,15 +797,6 @@ uint32_t PackBits(uint8_t start, uint8_t len, uint8_t *bits) {
 
     return tmp;
 }
-
-/*
-uint8_t pw_rev_A(uint8_t b) {
-    b = (b & 0xF0) >> 4 | (b & 0x0F) << 4;
-    b = (b & 0xCC) >> 2 | (b & 0x33) << 2;
-    b = (b & 0xAA) >> 1 | (b & 0x55) << 1;
-    return b;
-}
-*/
 
 uint64_t HornerScheme(uint64_t num, uint64_t divider, uint64_t factor) {
     uint64_t remaind = 0, quotient = 0, result = 0;

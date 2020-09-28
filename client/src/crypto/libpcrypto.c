@@ -10,6 +10,7 @@
 //-----------------------------------------------------------------------------
 
 #include "crypto/libpcrypto.h"
+#include "crypto/asn1utils.h"
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
@@ -23,9 +24,8 @@
 #include <mbedtls/ctr_drbg.h>
 #include <mbedtls/entropy.h>
 #include <mbedtls/error.h>
-#include <crypto/asn1utils.h>
-#include <util.h>
-
+#include "util.h"
+#include "ui.h"
 // NIST Special Publication 800-38A — Recommendation for block cipher modes of operation: methods and techniques, 2001.
 int aes_encode(uint8_t *iv, uint8_t *key, uint8_t *input, uint8_t *output, int length) {
     uint8_t iiv[16] = {0};
@@ -177,8 +177,9 @@ static int ecdsa_init(mbedtls_ecdsa_context *ctx, mbedtls_ecp_group_id curveid, 
 int ecdsa_key_create(mbedtls_ecp_group_id curveid, uint8_t *key_d, uint8_t *key_xy) {
     int res;
     mbedtls_ecdsa_context ctx;
-    ecdsa_init(&ctx, curveid, NULL, NULL);
-
+    res = ecdsa_init(&ctx, curveid, NULL, NULL);
+    if (res)
+        goto exit;
 
     mbedtls_entropy_context entropy;
     mbedtls_ctr_drbg_context ctr_drbg;
@@ -276,7 +277,10 @@ int ecdsa_signature_create(mbedtls_ecp_group_id curveid, uint8_t *key_d, uint8_t
         goto exit;
 
     mbedtls_ecdsa_context ctx;
-    ecdsa_init(&ctx, curveid, key_d, key_xy);
+    res = ecdsa_init(&ctx, curveid, key_d, key_xy);
+    if (res)
+        goto exit;
+
     res = mbedtls_ecdsa_write_signature(
               &ctx,
               MBEDTLS_MD_SHA256,
@@ -308,7 +312,10 @@ static int ecdsa_signature_create_test(mbedtls_ecp_group_id curveid, const char 
     param_gethex_to_eol(random, 0, fixed_rand_value, sizeof(fixed_rand_value), &rndlen);
 
     mbedtls_ecdsa_context ctx;
-    ecdsa_init_str(&ctx, curveid, key_d, key_x, key_y);
+    res = ecdsa_init_str(&ctx, curveid, key_d, key_x, key_y);
+    if (res)
+        return res;
+
     res = mbedtls_ecdsa_write_signature(&ctx, MBEDTLS_MD_SHA256, shahash, sizeof(shahash), signature, signaturelen, fixed_rand, NULL);
 
     mbedtls_ecdsa_free(&ctx);
@@ -323,7 +330,10 @@ static int ecdsa_signature_verify_keystr(mbedtls_ecp_group_id curveid, const cha
         return res;
 
     mbedtls_ecdsa_context ctx;
-    ecdsa_init_str(&ctx, curveid, NULL, key_x, key_y);
+    res = ecdsa_init_str(&ctx, curveid, NULL, key_x, key_y);
+    if (res)
+        return res;
+
     res = mbedtls_ecdsa_read_signature(
               &ctx,
               hash ? shahash : input,
@@ -347,6 +357,9 @@ int ecdsa_signature_verify(mbedtls_ecp_group_id curveid, uint8_t *key_xy, uint8_
 
     mbedtls_ecdsa_context ctx;
     res = ecdsa_init(&ctx, curveid, NULL, key_xy);
+    if (res)
+        return res;
+
     res = mbedtls_ecdsa_read_signature(
               &ctx,
               hash ? shahash : input,
@@ -359,7 +372,7 @@ int ecdsa_signature_verify(mbedtls_ecp_group_id curveid, uint8_t *key_xy, uint8_
     return res;
 }
 
-
+// take signature bytes,  converts to ASN1 signature and tries to verify
 int ecdsa_signature_r_s_verify(mbedtls_ecp_group_id curveid, uint8_t *key_xy, uint8_t *input, int length, uint8_t *r_s, size_t r_s_len, bool hash) {
     int res;
     uint8_t signature[MBEDTLS_ECDSA_MAX_LEN];
@@ -378,10 +391,8 @@ int ecdsa_signature_r_s_verify(mbedtls_ecp_group_id curveid, uint8_t *key_xy, ui
     }
 
     res = ecdsa_signature_verify(curveid, key_xy, input, length, signature, signature_len, hash);
-
     mbedtls_mpi_free(&r);
     mbedtls_mpi_free(&s);
-
     return res;
 }
 
@@ -403,10 +414,10 @@ int ecdsa_nist_test(bool verbose) {
 
     // NIST ecdsa test
     if (verbose)
-        printf("  ECDSA NIST test: ");
+        PrintAndLogEx(INFO, "  ECDSA NIST test: " NOLF);
     // make signature
     res = ecdsa_signature_create_test(curveid, T_PRIVATE_KEY, T_Q_X, T_Q_Y, T_K, input, length, signature, &siglen);
-// printf("res: %x signature[%x]: %s\n", (res<0)?-res:res, siglen, sprint_hex(signature, siglen));
+// PrintAndLogEx(INFO, "res: %x signature[%x]: %s", (res < 0)? -res : res, siglen, sprint_hex(signature, siglen));
     if (res)
         goto exit;
 
@@ -423,7 +434,7 @@ int ecdsa_nist_test(bool verbose) {
     uint8_t sval_s[33] = {0};
     param_gethex_to_eol(T_S, 0, sval_s, sizeof(sval_s), &slen);
     if (strncmp((char *)rval, (char *)rval_s, 32) || strncmp((char *)sval, (char *)sval_s, 32)) {
-        printf("R or S check error\n");
+        PrintAndLogEx(INFO, "R or S check error");
         res = 100;
         goto exit;
     }
@@ -436,14 +447,14 @@ int ecdsa_nist_test(bool verbose) {
     // verify wrong signature
     input[0] ^= 0xFF;
     res = ecdsa_signature_verify_keystr(curveid, T_Q_X, T_Q_Y, input, length, signature, siglen, true);
-    if (!res) {
+    if (res == false) {
         res = 1;
         goto exit;
     }
 
     if (verbose) {
-        printf("passed\n");
-        printf("  ECDSA binary signature create/check test: ");
+        PrintAndLogEx(NORMAL, _GREEN_("passed"));
+        PrintAndLogEx(INFO, "  ECDSA binary signature create/check test: " NOLF);
     }
 
     // random ecdsa test
@@ -470,11 +481,11 @@ int ecdsa_nist_test(bool verbose) {
         goto exit;
 
     if (verbose)
-        printf("passed\n\n");
+        PrintAndLogEx(NORMAL, _GREEN_("passed\n"));
 
     return 0;
 exit:
     if (verbose)
-        printf("failed\n\n");
+        PrintAndLogEx(NORMAL, _RED_("failed\n"));
     return res;
 }

@@ -22,7 +22,6 @@
 #include "legic.h"          // legic_card_select_t struct
 #include "spiffs.h"         // flashmem
 
-
 /*
  * To list all dump files from flash:
  *
@@ -44,7 +43,8 @@
  *
 */
 
-void DownloadLogInstructions() {
+#ifdef WITH_FLASH
+static void DownloadLogInstructions(void) {
     Dbprintf("");
     Dbprintf("[=] List all dumps from flash:");
     Dbprintf("[=]   " _YELLOW_("-") " mem spiffs tree");
@@ -52,8 +52,9 @@ void DownloadLogInstructions() {
     Dbprintf("[=] To save a dump file from flash to client:");
     Dbprintf("[=]   " _YELLOW_("-") " mem spiffs dump o hf-legic-UID-dump.bin f hf-legic-UID-dump.bin");
 }
+#endif
 
-void save_dump_to_file(legic_card_select_t *p_card) {
+static void save_dump_to_file(legic_card_select_t *p_card) {
 
 #ifdef WITH_FLASH
 
@@ -99,11 +100,12 @@ void ModInfo(void) {
 // A, B, C = Reading
 // A, D = Simulating
 
-void RunMod() {
+void RunMod(void) {
     StandAloneMode();
     FpgaDownloadAndGo(FPGA_BITSTREAM_HF);
     Dbprintf("[=] >>  HF Legic Prime Read/Simulate Started  <<");
     DbpString("[=] press and HOLD button to exit standalone mode");
+
     for (;;) {
         WDT_HIT();
 
@@ -161,7 +163,7 @@ void RunMod() {
             }
 
             // The read data is migrated to a MIM1024 card
-            LegicRfSimulate(ct);
+            LegicRfSimulate(ct, false);
         }
     }
 

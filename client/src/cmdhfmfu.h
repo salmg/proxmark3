@@ -18,28 +18,15 @@ typedef struct {
     uint8_t signature[32];
     //uint8_t counter[3];
     uint8_t data[1024];
-} old_mfu_dump_t;
-
+} PACKED old_mfu_dump_t;
 
 uint32_t GetHF14AMfU_Type(void);
 int ul_print_type(uint32_t tagtype, uint8_t spaces);
-
-void printMFUdump(mfu_dump_t *card);
 void printMFUdumpEx(mfu_dump_t *card, uint16_t pages, uint8_t startpage);
 
 int CmdHFMFUltra(const char *Cmd);
 
-uint32_t ul_ev1_pwdgenA(uint8_t *uid);
-uint32_t ul_ev1_pwdgenA(uint8_t *uid);
-uint32_t ul_ev1_pwdgenC(uint8_t *uid);
-uint32_t ul_ev1_pwdgenD(uint8_t *uid);
-
-uint16_t ul_ev1_packgenA(uint8_t *uid);
-uint16_t ul_ev1_packgenB(uint8_t *uid);
-uint16_t ul_ev1_packgenC(uint8_t *uid);
-uint16_t ul_ev1_packgenD(uint8_t *uid);
 uint16_t ul_ev1_packgen_VCNEW(uint8_t *uid, uint32_t pwd);
-
 uint32_t ul_ev1_otpgenA(uint8_t *uid);
 
 typedef enum TAGTYPE_UL {
@@ -70,6 +57,8 @@ typedef enum TAGTYPE_UL {
     NTAG_216_F       = 0x800000,
     UL_EV1           = 0x1000000,
     UL_NANO_40       = 0x2000000,
+    NTAG_213_TT      = 0x4000000,
+    NTAG_213_C       = 0x8000000,
     UL_MAGIC         = UL | MAGIC,
     UL_C_MAGIC       = UL_C | MAGIC,
     UL_ERROR         = 0xFFFFFF,

@@ -25,7 +25,7 @@
 #define RECEIVE_SIZE 64
 
 // the block number for the ISO14443-4 PCB
-uint8_t pcb_blocknum = 0;
+static uint8_t pcb_blocknum = 0;
 // Deselect card by sending a s-block. the crc is precalced for speed
 static  uint8_t deselect_cmd[] = {0xc2, 0xe0, 0xb4};
 
@@ -33,10 +33,10 @@ static  uint8_t deselect_cmd[] = {0xc2, 0xe0, 0xb4};
 /*                                       PCB   CID   CMD    PAYLOAD    */
 //static uint8_t __res[MAX_FRAME_SIZE];
 
-struct desfire_key skey = {0};
+static struct desfire_key skey = {0};
 static desfirekey_t sessionkey = &skey;
 
-bool InitDesfireCard() {
+bool InitDesfireCard(void) {
 
     pcb_blocknum = 0;
 
@@ -107,7 +107,7 @@ void MifareSendCommand(uint8_t *datain) {
     LED_B_OFF();
 }
 
-void MifareDesfireGetInformation() {
+void MifareDesfireGetInformation(void) {
 
     LEDsoff();
 
@@ -118,6 +118,7 @@ void MifareDesfireGetInformation() {
     struct p {
         uint8_t isOK;
         uint8_t uid[7];
+        uint8_t uidlen;
         uint8_t versionHW[7];
         uint8_t versionSW[7];
         uint8_t details[14];
@@ -148,15 +149,9 @@ void MifareDesfireGetInformation() {
         return;
     }
 
-    if (card.uidlen != 7) {
-        if (DBGLEVEL >= DBG_ERROR) Dbprintf("Wrong UID size. Expected 7byte got %d", card.uidlen);
-        payload.isOK = 2;  // 2 == WRONG UID
-        reply_ng(CMD_HF_DESFIRE_INFO, PM3_ESOFT, (uint8_t *)&payload, sizeof(payload));
-        switch_off();
-        return;
-    }
     // add uid.
-    memcpy(payload.uid, card.uid, sizeof(payload.uid));
+    memcpy(payload.uid, card.uid, card.uidlen);
+    payload.uidlen = card.uidlen;
 
     LED_A_ON();
     uint8_t cmd[] = {0x90, MFDES_GET_VERSION, 0x00, 0x00, 0x00};
@@ -270,7 +265,8 @@ void MifareDES_Auth1(uint8_t *datain) {
     LED_B_OFF();
     LED_C_OFF();
 
-    if (payload->key == NULL) {
+
+    if (payload->keylen == 0) {
         if (payload->algo == MFDES_AUTH_DES)  {
             memcpy(keybytes, PICC_MASTER_KEY8, 8);
         } else if (payload->algo == MFDES_ALGO_AES || payload->algo == MFDES_ALGO_3DES) {
@@ -682,7 +678,7 @@ size_t CreateAPDU(uint8_t *datain, size_t len, uint8_t *dataout) {
 // crc_update(&desfire_crc32, byte, 8);
 // uint32_t crc = crc_finish(&desfire_crc32);
 
-void OnSuccess() {
+void OnSuccess(void) {
     pcb_blocknum = 0;
     ReaderTransmit(deselect_cmd, 3, NULL);
     if (mifare_ultra_halt()) {

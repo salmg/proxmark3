@@ -59,7 +59,7 @@ THE SOFTWARE.
 #include <string.h>
 #include "crapto1/crapto1.h"
 #include "parity.h"
-//#include "util.h"
+#include "ui.h"             // PrintAndLogEx
 //#include "common.h"
 
 // bitslice type
@@ -238,18 +238,18 @@ uint64_t CRACK_STATES_BITSLICED(uint32_t cuid, uint8_t *best_first_bytes, statel
     // bitslice all the even states
     bitslice_t **restrict bitsliced_even_states = (bitslice_t **)malloc(((p->len[EVEN_STATE] - 1) / MAX_BITSLICES + 1) * sizeof(bitslice_t *));
     if (bitsliced_even_states == NULL) {
-        printf("Out of memory error in brute_force. Aborting...");
+        PrintAndLogEx(WARNING, "Out of memory error in brute_force. Aborting...");
         exit(4);
     }
     bitslice_value_t *restrict bitsliced_even_feedback = malloc_bitslice(((p->len[EVEN_STATE] - 1) / MAX_BITSLICES + 1) * sizeof(bitslice_value_t));
     if (bitsliced_even_feedback == NULL) {
-        printf("Out of memory error in brute_force. Aborting...");
+        PrintAndLogEx(WARNING, "Out of memory error in brute_force. Aborting...");
         exit(4);
     }
     for (uint32_t *restrict p_even = p->states[EVEN_STATE]; p_even < p_even_end; p_even += MAX_BITSLICES) {
         bitslice_t *restrict lstate_p = malloc_bitslice(STATE_SIZE / 2 * sizeof(bitslice_t));
         if (lstate_p == NULL) {
-            printf("Out of memory error in brute_force. Aborting... \n");
+            PrintAndLogEx(WARNING, "Out of memory error in brute_force. Aborting... \n");
             exit(4);
         }
         memset(lstate_p, 0x00, STATE_SIZE / 2 * sizeof(bitslice_t)); // zero even bits
@@ -265,8 +265,8 @@ uint64_t CRACK_STATES_BITSLICED(uint32_t cuid, uint8_t *best_first_bytes, statel
 #ifdef DEBUG_KEY_ELIMINATION
             if (known_target_key != -1 && e == test_state[EVEN_STATE]) {
                 bucket_contains_test_key[bitsliced_blocks] = true;
-                // printf("bucket %d contains test key even state\n", bitsliced_blocks);
-                // printf("in slice %d\n", slice_idx);
+                // PrintAndLogEx(INFO, "bucket %d contains test key even state", bitsliced_blocks);
+                // PrintAndLogEx(INFO, "in slice %d", slice_idx);
             }
 #endif
             for (uint32_t bit_idx = 0; bit_idx < STATE_SIZE / 2; bit_idx++, e >>= 1) {
@@ -336,8 +336,8 @@ uint64_t CRACK_STATES_BITSLICED(uint32_t cuid, uint8_t *best_first_bytes, statel
 
 #ifdef DEBUG_KEY_ELIMINATION
             // if (known_target_key != -1 && bucket_contains_test_key[block_idx] && *p_odd == test_state[ODD_STATE]) {
-            // printf("Now testing known target key.\n");
-            // printf("block_idx = %d/%d\n", block_idx, bitsliced_blocks);
+            // PrintAndLogEx(INFO, "Now testing known target key.");
+            // PrintAndLogEx(INFO, "block_idx = %d/%d", block_idx, bitsliced_blocks);
             // }
 #endif
             // add the even state bits
@@ -444,8 +444,8 @@ uint64_t CRACK_STATES_BITSLICED(uint32_t cuid, uint8_t *best_first_bytes, statel
 #endif
 #ifdef DEBUG_KEY_ELIMINATION
                             if (known_target_key != -1 && bucket_contains_test_key[block_idx] && *p_odd == test_state[ODD_STATE]) {
-                                printf("Known target key eliminated in brute_force.\n");
-                                printf("block_idx = %d/%d, nonce = %d/%d\n", block_idx, bitsliced_blocks, tests, nonces_to_bruteforce);
+                                PrintAndLogEx(INFO, "Known target key eliminated in brute_force.");
+                                PrintAndLogEx(INFO, "block_idx = %d/%d, nonce = %d/%d", block_idx, bitsliced_blocks, tests, nonces_to_bruteforce);
                             }
 #endif
                             goto stop_tests;
@@ -468,7 +468,7 @@ uint64_t CRACK_STATES_BITSLICED(uint32_t cuid, uint8_t *best_first_bytes, statel
                     }
                     // remember feedback and keystream vectors for later use
                     uint8_t bit = KEYSTREAM_SIZE - ks_idx;
-                    if (bit <= next_common_bits) {  // if needed and not yet stored
+                    if (bit <= MIN(next_common_bits, 7)) {  // if needed and not yet stored
                         fbb[bit] = fb_bits;
                         ksb[bit] = ks_bits;
                         par[bit] = parity_bit_vector;
@@ -495,15 +495,15 @@ uint64_t CRACK_STATES_BITSLICED(uint32_t cuid, uint8_t *best_first_bytes, statel
                         }
 #ifdef DEBUG_KEY_ELIMINATION
                         if (known_target_key != -1 && *p_even_test == test_state[EVEN_STATE] && *p_odd == test_state[ODD_STATE]) {
-                            printf("Known target key eliminated in brute_force verification.\n");
-                            printf("block_idx = %d/%d\n", block_idx, bitsliced_blocks);
+                            PrintAndLogEx(INFO, "Known target key eliminated in brute_force verification.");
+                            PrintAndLogEx(INFO, "block_idx = %d/%d", block_idx, bitsliced_blocks);
                         }
 #endif
                     }
 #ifdef DEBUG_KEY_ELIMINATION
                     if (known_target_key != -1 && *p_even_test == test_state[EVEN_STATE] && *p_odd == test_state[ODD_STATE]) {
-                        printf("Known target key eliminated in brute_force (results_bit == 0).\n");
-                        printf("block_idx = %d/%d\n", block_idx, bitsliced_blocks);
+                        PrintAndLogEx(INFO, "Known target key eliminated in brute_force (results_bit == 0).");
+                        PrintAndLogEx(INFO, "block_idx = %d/%d", block_idx, bitsliced_blocks);
                     }
 #endif
                     results64 >>= 1;
@@ -533,7 +533,7 @@ out:
 
 #if defined (DEBUG_BRUTE_FORCE)
     for (uint32_t i = 0; i < MAX_ELIMINATION_STEP; i++) {
-        printf("Eliminated after %2u test_bytes: %5.2f%%\n", i + 1, (float)keys_eliminated[i] / bucket_states_tested * 100);
+        PrintAndLogEx(INFO, "Eliminated after %2u test_bytes: %5.2f%%", i + 1, (float)keys_eliminated[i] / bucket_states_tested * 100);
     }
 #endif
     return key;
@@ -556,29 +556,31 @@ void SetSIMDInstr(SIMDExecInstr instr) {
     bitslice_test_nonces_function_p = &bitslice_test_nonces_dispatch;
 }
 
-static SIMDExecInstr GetSIMDInstr() {
-    SIMDExecInstr instr = SIMD_NONE;
+static SIMDExecInstr GetSIMDInstr(void) {
+    SIMDExecInstr instr;
 
-#if defined (__i386__) || defined (__x86_64__)
-#if !defined(__APPLE__) || (defined(__APPLE__) && (__clang_major__ > 8 || __clang_major__ == 8 && __clang_minor__ >= 1))
-#if (__GNUC__ >= 5) && (__GNUC__ > 5 || __GNUC_MINOR__ > 2)
-    if (__builtin_cpu_supports("avx512f")) instr = SIMD_AVX512;
-    else if (__builtin_cpu_supports("avx2")) instr = SIMD_AVX2;
-#else
-    if (__builtin_cpu_supports("avx2")) instr = SIMD_AVX2;
-#endif
-    else if (__builtin_cpu_supports("avx")) instr = SIMD_AVX;
-    else if (__builtin_cpu_supports("sse2")) instr = SIMD_SSE2;
-    else if (__builtin_cpu_supports("mmx")) instr = SIMD_MMX;
+#if defined(COMPILER_HAS_SIMD_AVX512)
+    if (__builtin_cpu_supports("avx512f"))
+        instr = SIMD_AVX512;
     else
 #endif
+#if defined(COMPILER_HAS_SIMD)
+        if (__builtin_cpu_supports("avx2"))
+            instr = SIMD_AVX2;
+        else if (__builtin_cpu_supports("avx"))
+            instr = SIMD_AVX;
+        else if (__builtin_cpu_supports("sse2"))
+            instr = SIMD_SSE2;
+        else if (__builtin_cpu_supports("mmx"))
+            instr = SIMD_MMX;
+        else
 #endif
-        instr = SIMD_NONE;
+            instr = SIMD_NONE;
 
     return instr;
 }
 
-SIMDExecInstr GetSIMDInstrAuto() {
+SIMDExecInstr GetSIMDInstrAuto(void) {
     SIMDExecInstr instr = intSIMDInstr;
     if (instr == SIMD_AUTO)
         return GetSIMDInstr();
@@ -589,13 +591,12 @@ SIMDExecInstr GetSIMDInstrAuto() {
 // determine the available instruction set at runtime and call the correct function
 uint64_t crack_states_bitsliced_dispatch(uint32_t cuid, uint8_t *best_first_bytes, statelist_t *p, uint32_t *keys_found, uint64_t *num_keys_tested, uint32_t nonces_to_bruteforce, uint8_t *bf_test_nonce_2nd_byte, noncelist_t *nonces) {
     switch (GetSIMDInstrAuto()) {
-#if defined (__i386__) || defined (__x86_64__)
-#if !defined(__APPLE__) || (defined(__APPLE__) && (__clang_major__ > 8 || __clang_major__ == 8 && __clang_minor__ >= 1))
-#if (__GNUC__ >= 5) && (__GNUC__ > 5 || __GNUC_MINOR__ > 2)
+#if defined(COMPILER_HAS_SIMD_AVX512)
         case SIMD_AVX512:
             crack_states_bitsliced_function_p = &crack_states_bitsliced_AVX512;
             break;
 #endif
+#if defined(COMPILER_HAS_SIMD)
         case SIMD_AVX2:
             crack_states_bitsliced_function_p = &crack_states_bitsliced_AVX2;
             break;
@@ -609,8 +610,8 @@ uint64_t crack_states_bitsliced_dispatch(uint32_t cuid, uint8_t *best_first_byte
             crack_states_bitsliced_function_p = &crack_states_bitsliced_MMX;
             break;
 #endif
-#endif
-        default:
+        case SIMD_AUTO:
+        case SIMD_NONE:
             crack_states_bitsliced_function_p = &crack_states_bitsliced_NOSIMD;
             break;
     }
@@ -621,13 +622,12 @@ uint64_t crack_states_bitsliced_dispatch(uint32_t cuid, uint8_t *best_first_byte
 
 void bitslice_test_nonces_dispatch(uint32_t nonces_to_bruteforce, uint32_t *bf_test_nonce, uint8_t *bf_test_nonce_par) {
     switch (GetSIMDInstrAuto()) {
-#if defined (__i386__) || defined (__x86_64__)
-#if !defined(__APPLE__) || (defined(__APPLE__) && (__clang_major__ > 8 || __clang_major__ == 8 && __clang_minor__ >= 1))
-#if (__GNUC__ >= 5) && (__GNUC__ > 5 || __GNUC_MINOR__ > 2)
+#if defined(COMPILER_HAS_SIMD_AVX512)
         case SIMD_AVX512:
             bitslice_test_nonces_function_p = &bitslice_test_nonces_AVX512;
             break;
 #endif
+#if defined(COMPILER_HAS_SIMD)
         case SIMD_AVX2:
             bitslice_test_nonces_function_p = &bitslice_test_nonces_AVX2;
             break;
@@ -641,8 +641,8 @@ void bitslice_test_nonces_dispatch(uint32_t nonces_to_bruteforce, uint32_t *bf_t
             bitslice_test_nonces_function_p = &bitslice_test_nonces_MMX;
             break;
 #endif
-#endif
-        default:
+        case SIMD_AUTO:
+        case SIMD_NONE:
             bitslice_test_nonces_function_p = &bitslice_test_nonces_NOSIMD;
             break;
     }

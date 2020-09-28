@@ -1,8 +1,7 @@
 MYSRCPATHS =
 MYINCLUDES = -I.
-# Lua lib is not ready for C99 style...
-#MYCFLAGS = -std=c99 -D_ISOC99_SOURCE
-MYCFLAGS =
+# Lua lib requires GNU extensions (implicit declarations of functions): -std=gnu99 or -std=gnu11
+MYCFLAGS = -Wno-cast-align -Wno-bad-function-cast -Wno-switch-enum
 MYDEFS = -DLUA_COMPAT_ALL $(SYSCFLAGS)
 MYSRCS =	lapi.c lcode.c lctype.c ldebug.c ldo.c ldump.c lfunc.c lgc.c llex.c \
 	lmem.c lobject.c lopcodes.c lparser.c lstate.c lstring.c ltable.c \

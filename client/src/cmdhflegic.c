@@ -10,7 +10,11 @@
 #include "cmdhflegic.h"
 
 #include <stdio.h> // for Mingw readline
+#include <ctype.h> // tolower
+
+#ifdef HAVE_READLINE
 #include <readline/readline.h>
+#endif
 
 #include "cmdparser.h"    // command_t
 #include "comms.h"        // clearCommandBuffer
@@ -69,12 +73,13 @@ static int usage_legic_sim(void) {
 }
 static int usage_legic_wrbl(void) {
     PrintAndLogEx(NORMAL, "Write data to a LEGIC Prime tag. It autodetects tagsize to make sure size\n");
-    PrintAndLogEx(NORMAL, "Usage:  hf legic wrbl [h] [o <offset>] [d <data (hex symbols)>]\n");
+    PrintAndLogEx(NORMAL, "Usage:  hf legic wrbl [h] [o <offset>] [d <data (hex symbols)>] [y]\n");
     PrintAndLogEx(NORMAL, "Options:");
     PrintAndLogEx(NORMAL, "      h             : this help");
     PrintAndLogEx(NORMAL, "      o <offset>    : (hex) offset in data array to start writing");
     //PrintAndLogEx(NORMAL, "  <IV>          : (optional) Initialization vector to use (ODD and 7bits)");
     PrintAndLogEx(NORMAL, "      d <data>      : (hex symbols) bytes to write ");
+    PrintAndLogEx(NORMAL, "      y             : Auto-confirm dangerous operations ");
     PrintAndLogEx(NORMAL, "");
     PrintAndLogEx(NORMAL, "Examples:");
     PrintAndLogEx(NORMAL, _YELLOW_("      hf legic wrbl o 10 d 11223344    - Write 0x11223344 starting from offset 0x10"));
@@ -140,7 +145,7 @@ static int usage_legic_eload(void) {
     PrintAndLogEx(NORMAL, "      f <filename>    : filename w/o .bin to load");
     PrintAndLogEx(NORMAL, "");
     PrintAndLogEx(NORMAL, "Examples:");
-    PrintAndLogEx(NORMAL, _YELLOW_("      hf legic eload 2 myfile"));
+    PrintAndLogEx(NORMAL, _YELLOW_("      hf legic eload 2 f myfile"));
     return PM3_SUCCESS;
 }
 static int usage_legic_esave(void) {
@@ -577,13 +582,39 @@ static int CmdLegicRdbl(const char *Cmd) {
 }
 
 static int CmdLegicSim(const char *Cmd) {
+
     char cmdp = tolower(param_getchar(Cmd, 0));
     if (strlen(Cmd) == 0 || cmdp == 'h') return usage_legic_sim();
 
-    uint64_t id = 1;
-    sscanf(Cmd, " %" SCNi64, &id);
+    struct {
+        uint8_t tagtype;
+        bool send_reply;
+    } PACKED payload;
+
+    payload.send_reply = true;
+    payload.tagtype = param_get8ex(Cmd, 0, 1, 10);
+    if (payload.tagtype > 2) {
+        return usage_legic_sim();
+    }
+
     clearCommandBuffer();
-    SendCommandMIX(CMD_HF_LEGIC_SIMULATE, id, 0, 0, NULL, 0);
+    SendCommandNG(CMD_HF_LEGIC_SIMULATE, (uint8_t *)&payload, sizeof(payload));
+    PacketResponseNG resp;
+
+    PrintAndLogEx(INFO, "Press pm3-button to abort simulation");
+    bool keypress = kbd_enter_pressed();
+    while (keypress == false) {
+        keypress = kbd_enter_pressed();
+
+        if (WaitForResponseTimeout(CMD_HF_LEGIC_SIMULATE, &resp, 1500)) {
+            break;
+        }
+
+    }
+    if (keypress)
+        SendCommandNG(CMD_BREAK_LOOP, NULL, 0);
+
+    PrintAndLogEx(INFO, "Done");
     return PM3_SUCCESS;
 }
 
@@ -592,6 +623,7 @@ static int CmdLegicWrbl(const char *Cmd) {
     uint8_t *data = NULL;
     uint8_t cmdp = 0;
     bool errors = false;
+    bool autoconfirm = false;
     int len = 0, bg, en;
     uint32_t offset = 0, IV = 0x55;
 
@@ -651,6 +683,10 @@ static int CmdLegicWrbl(const char *Cmd) {
                 errors = true;
                 break;
             }
+            case 'y': {
+                autoconfirm = true;
+                break;
+            }
             default: {
                 PrintAndLogEx(WARNING, "Unknown parameter '%c'", param_getchar(Cmd, cmdp));
                 errors = true;
@@ -689,14 +725,27 @@ static int CmdLegicWrbl(const char *Cmd) {
         return PM3_EOUTOFBOUND;
     }
 
-    if (offset == 5 || offset == 6) {
+    if ((offset == 5 || offset == 6) && (! autoconfirm)) {
         PrintAndLogEx(NORMAL, "############# DANGER ################");
         PrintAndLogEx(NORMAL, "# changing the DCF is irreversible  #");
         PrintAndLogEx(NORMAL, "#####################################");
-        char *answer = readline("do you really want to continue? y(es) n(o) : ");
-        bool overwrite = (answer[0] == 'y' || answer[0] == 'Y');
-        if (!overwrite) {
-            PrintAndLogEx(NORMAL, "command cancelled");
+        const char *confirm = "Do you really want to continue? y(es)/n(o) : ";
+        bool overwrite = false;
+#ifdef HAVE_READLINE
+        char *answer = readline(confirm);
+        overwrite = (answer[0] == 'y' || answer[0] == 'Y');
+#else
+        PrintAndLogEx(NORMAL, "%s" NOLF, confirm);
+        char *answer = NULL;
+        size_t anslen = 0;
+        if (getline(&answer, &anslen, stdin) > 0) {
+            overwrite = (answer[0] == 'y' || answer[0] == 'Y');
+        }
+        PrintAndLogEx(NORMAL, "");
+#endif
+        free(answer);
+        if (overwrite == false) {
+            PrintAndLogEx(WARNING, "command cancelled");
             return PM3_EOPABORTED;
         }
     }
@@ -709,18 +758,16 @@ static int CmdLegicWrbl(const char *Cmd) {
     clearCommandBuffer();
     SendCommandOLD(CMD_HF_LEGIC_WRITER, offset, len, IV, data, len);
 
-
     uint8_t timeout = 0;
     while (!WaitForResponseTimeout(CMD_ACK, &resp, 2000)) {
         ++timeout;
-        printf(".");
-        fflush(stdout);
+        PrintAndLogEx(NORMAL, "." NOLF);
         if (timeout > 7) {
             PrintAndLogEx(WARNING, "\ncommand execution time out");
             return PM3_ETIMEOUT;
         }
     }
-    PrintAndLogEx(NORMAL, "\n");
+    PrintAndLogEx(NORMAL, "");
 
     uint8_t isOK = resp.oldarg[0] & 0xFF;
     if (!isOK) {
@@ -824,8 +871,7 @@ int legic_read_mem(uint32_t offset, uint32_t len, uint32_t iv, uint8_t *out, uin
     uint8_t timeout = 0;
     while (!WaitForResponseTimeout(CMD_ACK, &resp, 1000)) {
         ++timeout;
-        printf(".");
-        fflush(stdout);
+        PrintAndLogEx(NORMAL,  "." NOLF);
         if (timeout > 14) {
             PrintAndLogEx(WARNING, "\ncommand execution time out");
             return PM3_ETIMEOUT;
@@ -880,7 +926,7 @@ int legic_get_type(legic_card_select_t *card) {
     if (!isOK)
         return PM3_ESOFT;
 
-    memcpy(card, (legic_card_select_t *)resp.data.asBytes, sizeof(legic_card_select_t));
+    memcpy(card, resp.data.asBytes, sizeof(legic_card_select_t));
     return PM3_SUCCESS;
 }
 void legic_chk_iv(uint32_t *iv) {
@@ -968,14 +1014,13 @@ static int CmdLegicDump(const char *Cmd) {
     uint8_t timeout = 0;
     while (!WaitForResponseTimeout(CMD_ACK, &resp, 2000)) {
         ++timeout;
-        printf(".");
-        fflush(stdout);
+        PrintAndLogEx(NORMAL, "." NOLF);
         if (timeout > 7) {
             PrintAndLogEx(WARNING, "\ncommand execution time out");
             return PM3_ETIMEOUT;
         }
     }
-    PrintAndLogEx(NORMAL, "\n");
+    PrintAndLogEx(NORMAL, "");
 
     uint8_t isOK = resp.oldarg[0] & 0xFF;
     if (!isOK) {
@@ -1003,7 +1048,7 @@ static int CmdLegicDump(const char *Cmd) {
     // user supplied filename?
     if (fileNameLen < 1) {
         PrintAndLogEx(INFO, "Using UID as filename");
-        fptr += sprintf(fptr, "hf-legic-");
+        fptr += snprintf(fptr, sizeof(filename), "hf-legic-");
         FillFileNameByUID(fptr, data, "-dump", 4);
     }
 
@@ -1015,7 +1060,7 @@ static int CmdLegicDump(const char *Cmd) {
 
     saveFile(filename, ".bin", data, readlen);
     saveFileEML(filename, data, readlen, 8);
-    saveFileJSON(filename, jsfLegic, data, readlen);
+    saveFileJSON(filename, jsfLegic, data, readlen, NULL);
     free(data);
     return PM3_SUCCESS;
 }
@@ -1112,15 +1157,14 @@ static int CmdLegicRestore(const char *Cmd) {
         uint8_t timeout = 0;
         while (!WaitForResponseTimeout(CMD_ACK, &resp, 2000)) {
             ++timeout;
-            printf(".");
-            fflush(stdout);
+            PrintAndLogEx(NORMAL, "." NOLF);
             if (timeout > 7) {
                 PrintAndLogEx(WARNING, "\ncommand execution time out");
                 free(data);
                 return PM3_ETIMEOUT;
             }
         }
-        PrintAndLogEx(NORMAL, "\n");
+        PrintAndLogEx(NORMAL, "");
 
         uint8_t isOK = resp.oldarg[0] & 0xFF;
         if (!isOK) {
@@ -1278,7 +1322,7 @@ static int CmdLegicESave(const char *Cmd) {
     // user supplied filename?
     if (fileNameLen < 1) {
         PrintAndLogEx(INFO, "Using UID as filename");
-        fptr += sprintf(fptr, "hf-legic-");
+        fptr += snprintf(fptr, sizeof(filename), "hf-legic-");
         FillFileNameByUID(fptr, data, "-dump", 4);
     }
 
@@ -1288,7 +1332,7 @@ static int CmdLegicESave(const char *Cmd) {
 
     saveFile(filename, ".bin", data, numofbytes);
     saveFileEML(filename, data, numofbytes, 8);
-    saveFileJSON(filename, jsfLegic, data, numofbytes);
+    saveFileJSON(filename, jsfLegic, data, numofbytes, NULL);
     return PM3_SUCCESS;
 }
 
@@ -1322,8 +1366,8 @@ static int CmdLegicWipe(const char *Cmd) {
     PacketResponseNG resp;
     for (size_t i = 7; i < card.cardsize; i += PM3_CMD_DATA_SIZE) {
 
-        printf(".");
-        fflush(stdout);
+        PrintAndLogEx(NORMAL, "." NOLF);
+
         size_t len = MIN((card.cardsize - i), PM3_CMD_DATA_SIZE);
         if (len == card.cardsize - i) {
             // Disable fast mode on last packet
@@ -1335,15 +1379,14 @@ static int CmdLegicWipe(const char *Cmd) {
         uint8_t timeout = 0;
         while (!WaitForResponseTimeout(CMD_ACK, &resp, 2000)) {
             ++timeout;
-            printf(".");
-            fflush(stdout);
+            PrintAndLogEx(NORMAL, "." NOLF);
             if (timeout > 7) {
                 PrintAndLogEx(WARNING, "\ncommand execution time out");
                 free(data);
                 return PM3_ETIMEOUT;
             }
         }
-        PrintAndLogEx(NORMAL, "\n");
+        PrintAndLogEx(NORMAL, "");
 
         uint8_t isOK = resp.oldarg[0] & 0xFF;
         if (!isOK) {

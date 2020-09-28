@@ -9,18 +9,21 @@
 
 #include "cmdlfnedap.h"
 
+#define _GNU_SOURCE
 #include <string.h>
 
 #include <ctype.h>
 #include <stdlib.h>
+
 #include "cmdparser.h"    // command_t
 #include "comms.h"
 #include "crc16.h"
-#include "cmdlft55xx.h" // verifywrite
+#include "cmdlft55xx.h"   // verify write
 #include "ui.h"
 #include "cmddata.h"
 #include "cmdlf.h"
 #include "lfdemod.h"
+#include "protocols.h"
 
 #define FIXED_71    0x71
 #define FIXED_40    0x40
@@ -41,24 +44,26 @@ static int usage_lf_nedap_gen(void) {
     PrintAndLogEx(NORMAL, "      l               : optional - long (128), default to short (64)");
     PrintAndLogEx(NORMAL, "");
     PrintAndLogEx(NORMAL, "Examples:");
-    PrintAndLogEx(NORMAL, "       lf nedap generate s 1 c 123 i 12345");
+    PrintAndLogEx(NORMAL, _YELLOW_("       lf nedap generate s 1 c 123 i 12345"));
+    PrintAndLogEx(NORMAL, "");
     return PM3_SUCCESS;
 }
 
 static int usage_lf_nedap_clone(void) {
-    PrintAndLogEx(NORMAL, "clone a Nedap tag to a T55x7 tag.");
+    PrintAndLogEx(NORMAL, "clone a Nedap tag to a T55x7 or Q5/T5555 tag.");
     PrintAndLogEx(NORMAL, "");
-    PrintAndLogEx(NORMAL, "Usage: lf nedap clone [h] [s <subtype>] c <code> i <id> [l]");
+    PrintAndLogEx(NORMAL, "Usage: lf nedap clone [h] [s <subtype>] c <code> i <id> [l] <Q5>");
     PrintAndLogEx(NORMAL, "Options:");
     PrintAndLogEx(NORMAL, "      h               : This help");
     PrintAndLogEx(NORMAL, "      s <subtype>     : optional, default=5");
     PrintAndLogEx(NORMAL, "      c <code>        : customerCode");
     PrintAndLogEx(NORMAL, "      i <id>          : ID  (max 99999)");
     PrintAndLogEx(NORMAL, "      l               : optional - long (128), default to short (64)");
-//  PrintAndLogEx(NORMAL, "      Q5              : optional - clone to Q5 (T5555) instead of T55x7 chip");
+    PrintAndLogEx(NORMAL, "      Q5              : optional - specify writing to Q5/T5555 tag");
     PrintAndLogEx(NORMAL, "");
     PrintAndLogEx(NORMAL, "Examples:");
-    PrintAndLogEx(NORMAL, "       lf nedap clone s 1 c 123 i 12345");
+    PrintAndLogEx(NORMAL, _YELLOW_("       lf nedap clone s 1 c 123 i 12345"));
+    PrintAndLogEx(NORMAL, "");
     return PM3_SUCCESS;
 }
 
@@ -76,7 +81,8 @@ static int usage_lf_nedap_sim(void) {
     PrintAndLogEx(NORMAL, "");
     PrintAndLogEx(NORMAL, "Examples:");
 // TODO proper example?
-    PrintAndLogEx(NORMAL, "       lf nedap sim s 1 c 7 i 1337");
+    PrintAndLogEx(NORMAL, _YELLOW_("       lf nedap sim s 1 c 7 i 1337"));
+    PrintAndLogEx(NORMAL, "");
     return PM3_SUCCESS;
 }
 
@@ -95,7 +101,9 @@ static inline uint32_t bitcount(uint32_t a) {
 }
 
 static uint8_t isEven_64_63(const uint8_t *data) { // 8
-    return (bitcount(*(uint32_t *) data) + (bitcount((*(uint32_t *)(data + 4)) & 0xfeffffff))) & 1;
+    uint32_t tmp[2];
+    memcpy(tmp, data, 8);
+    return (bitcount(tmp[0]) + (bitcount(tmp[1] & 0xfeffffff))) & 1;
 }
 
 //NEDAP demod - ASK/Biphase (or Diphase),  RF/64 with preamble of 1111111110  (always a 128 bit data stream)
@@ -163,14 +171,14 @@ static int CmdLFNedapDemod(const char *Cmd) {
 
     buffer[6] = (data[3] << 7) | ((data[4] & 0xe0) >> 1) | ((data[4] & 0x01) << 3) | ((data[5] & 0xe0) >> 5);
     buffer[5] = (data[5] << 7) | ((data[6] & 0xe0) >> 1) | ((data[6] & 0x01) << 3) | ((data[7] & 0xe0) >> 5);
-
-    bool isValid = (checksum == *(uint16_t *)(buffer + 5));
+    uint16_t checksum2 = (buffer[6] << 8) + buffer[5];
+    bool isValid = (checksum == checksum2);
 
     subtype = (data[1] & 0x1e) >> 1;
     customerCode = ((data[1] & 0x01) << 11) | (data[2] << 3) | ((data[3] & 0xe0) >> 5);
 
     if (isValid == false) {
-        PrintAndLogEx(ERR, "Checksum : %s (calc 0x%04X != 0x%04X)", _RED_("failed"), checksum, *(uint16_t *)(buffer + 5));
+        PrintAndLogEx(ERR, "Checksum : %s (calc 0x%04X != 0x%04X)", _RED_("fail"), checksum, checksum2);
         ret = PM3_ESOFT;
     }
 
@@ -190,9 +198,9 @@ static int CmdLFNedapDemod(const char *Cmd) {
 
         badgeId = r1 * 10000 + r2 * 1000 + r3 * 100 + r4 * 10 + r5;
 
-        PrintAndLogEx(SUCCESS, "NEDAP Tag Found: Card ID "_YELLOW_("%05u")" subtype: "_YELLOW_("%1u")" customer code: "_YELLOW_("%03x"), badgeId, subtype, customerCode);
-        PrintAndLogEx(SUCCESS, "Checksum is %s (0x%04X)",  _GREEN_("OK"), checksum);
-        PrintAndLogEx(SUCCESS, "Raw: %s", sprint_hex(data, size / 8));
+        PrintAndLogEx(SUCCESS, "NEDAP - Card: " _YELLOW_("%05u") " subtype: " _YELLOW_("%1u")" customer code: " _YELLOW_("%03x") ", Raw: %s", badgeId, subtype, customerCode, sprint_hex(data, size / 8));
+        PrintAndLogEx(DEBUG, "Checksum (%s) 0x%04X",  _GREEN_("ok"), checksum);
+
     } else {
         PrintAndLogEx(ERR, "Invalid idx (1:%02x - 2:%02x - 3:%02x - 4:%02x - 5:%02x)", idxC1, idxC2, idxC3, idxC4, idxC5);
         ret = PM3_ESOFT;
@@ -237,7 +245,7 @@ static int CmdLFNedapDemod(const char *Cmd) {
         if (!r0 && (r1 < 10) && (r2 < 10) && (r3 < 10) && (r4 < 10) && (r5 < 10)) {
 
             badgeId = r1 * 10000 + r2 * 1000 + r3 * 100 + r4 * 10 + r5;
-            PrintAndLogEx(SUCCESS, "Second Card Id " _YELLOW_("%05u"), badgeId);
+            PrintAndLogEx(SUCCESS, "Second Card: " _YELLOW_("%05u"), badgeId);
 
             if ((fixed0 == FIXED_71) && (fixed1 == FIXED_40))
                 PrintAndLogEx(DEBUG, "Fixed part {0 = 0x%02x, 1 = 0x%02x}", fixed0, fixed1);
@@ -394,6 +402,9 @@ static int CmdLfNedapGen(const char *Cmd) {
                 isLong = true;
                 cmdp++;
                 break;
+            case 'q':
+                cmdp++;
+                break;
             default:
                 PrintAndLogEx(WARNING, "Unknown parameter '%c'", param_getchar(Cmd, cmdp));
                 errors = true;
@@ -444,14 +455,8 @@ static int CmdLFNedapClone(const char *Cmd) {
         return PM3_ESOFT;
     }
 
-    //CmdPrintDemodBuff("x");
-
-// What we had before in commented code:
     //NEDAP - compat mode, ASK/DIphase, data rate 64, 4 data blocks
     // DI-phase (CDP) T55x7_MODULATION_DIPHASE
-//    blocks[0] = T55x7_MODULATION_DIPHASE | T55x7_BITRATE_RF_64 | 7 << T55x7_MAXBLOCK_SHIFT;
-//    if (param_getchar(Cmd, 3) == 'Q' || param_getchar(Cmd, 3) == 'q')
-//        blocks[0] = T5555_MODULATION_BIPHASE | T5555_INVERT_OUTPUT | T5555_SET_BITRATE(64) | 7 <<T5555_MAXBLOCK_SHIFT;
 
     if (DemodBufferLen == 64) {
         max = 3;
@@ -460,12 +465,20 @@ static int CmdLFNedapClone(const char *Cmd) {
         max = 5;
         blocks[0] = T55X7_NEDAP_128_CONFIG_BLOCK;
     }
+    bool q5 = (strstr(Cmd, "q") != NULL);
+    if (q5) {
+        if (DemodBufferLen == 64) {
+            blocks[0] = T5555_FIXED | T5555_MODULATION_BIPHASE | T5555_INVERT_OUTPUT | T5555_SET_BITRATE(64) | 2 << T5555_MAXBLOCK_SHIFT;
+        } else {
+            blocks[0] = T5555_FIXED | T5555_MODULATION_BIPHASE | T5555_INVERT_OUTPUT | T5555_SET_BITRATE(64) | 4 << T5555_MAXBLOCK_SHIFT;
+        }
+    }
 
     for (uint8_t i = 1; i < max ; i++) {
         blocks[i] = bytebits_to_byte(DemodBuffer + ((i - 1) * 32), 32);
     }
 
-    PrintAndLogEx(SUCCESS, "Preparing to clone NEDAP to T55x7");
+    PrintAndLogEx(SUCCESS, "Preparing to clone NEDAP to " _YELLOW_("%s") " tag", (q5) ? "Q5/T5555" : "T55x7");
     print_blocks(blocks, max);
 
     int res = clone_t55xx_tag(blocks, max);
@@ -526,7 +539,7 @@ static command_t CommandTable[] = {
     {"demod",    CmdLFNedapDemod, AlwaysAvailable, "Demodulate Nedap tag from the GraphBuffer"},
     {"generate", CmdLfNedapGen,   AlwaysAvailable, "Generate Nedap bitstream in DemodBuffer"},
     {"read",     CmdLFNedapRead,  IfPm3Lf,         "Attempt to read and extract tag data from the antenna"},
-    {"clone",    CmdLFNedapClone, IfPm3Lf,         "Clone Nedap tag to T55x7"},
+    {"clone",    CmdLFNedapClone, IfPm3Lf,         "Clone Nedap tag to T55x7 or Q5/T5555"},
     {"sim",      CmdLFNedapSim,   IfPm3Lf,         "Simulate Nedap tag"},
     {NULL, NULL, NULL, NULL}
 };

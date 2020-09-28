@@ -1,4 +1,5 @@
 //-----------------------------------------------------------------------------
+// Marshmellow,
 //
 // This code is licensed to you under the terms of the GNU GPL, version 2 or,
 // at your option, any later version. See the LICENSE.txt file for the text of
@@ -26,14 +27,15 @@
 static int CmdHelp(const char *Cmd);
 
 static int usage_lf_viking_clone(void) {
-    PrintAndLogEx(NORMAL, "clone a Viking AM tag to a T55x7 tag.");
+    PrintAndLogEx(NORMAL, "clone a Viking AM tag to a T55x7 or Q5/T5555 tag.");
     PrintAndLogEx(NORMAL, "Usage: lf viking clone <Card ID - 8 hex digits> <Q5>");
     PrintAndLogEx(NORMAL, "Options:");
     PrintAndLogEx(NORMAL, "  <Card Number>  : 8 digit hex viking card number");
-    PrintAndLogEx(NORMAL, "  <Q5>           : specify write to Q5 (t5555 instead of t55x7)");
+    PrintAndLogEx(NORMAL, "  <Q5>           : specify writing to Q5/T5555 tag)");
     PrintAndLogEx(NORMAL, "");
     PrintAndLogEx(NORMAL, "Examples:");
-    PrintAndLogEx(NORMAL, "       lf viking clone 1A337 Q5");
+    PrintAndLogEx(NORMAL, _YELLOW_("       lf viking clone 1A337"));
+    PrintAndLogEx(NORMAL, _YELLOW_("       lf viking clone 1A337 Q5") "     - encode for Q5/T5555 tag");
     return PM3_SUCCESS;
 }
 
@@ -47,36 +49,41 @@ static int usage_lf_viking_sim(void) {
     PrintAndLogEx(NORMAL, "  <Card Number>   : 8 digit hex viking card number");
     PrintAndLogEx(NORMAL, "");
     PrintAndLogEx(NORMAL, "Examples:");
-    PrintAndLogEx(NORMAL, "       lf viking sim 1A337");
+    PrintAndLogEx(NORMAL, _YELLOW_("       lf viking sim 1A337"));
     return PM3_SUCCESS;
 }
 
-//by marshmellow
-//see ASKDemod for what args are accepted
 static int CmdVikingDemod(const char *Cmd) {
-    if (ASKDemod(Cmd, false, false, 1) != PM3_SUCCESS) {
+    return demodViking();
+}
+
+//see ASKDemod for what args are accepted
+int demodViking(void) {
+
+    if (ASKDemod("", false, false, 1) != PM3_SUCCESS) {
         PrintAndLogEx(DEBUG, "DEBUG: Error - Viking ASKDemod failed");
         return PM3_ESOFT;
     }
+
     size_t size = DemodBufferLen;
     int ans = detectViking(DemodBuffer, &size);
     if (ans < 0) {
         PrintAndLogEx(DEBUG, "DEBUG: Error - Viking Demod %d %s", ans, (ans == -5) ? _RED_("[chksum error]") : "");
         return PM3_ESOFT;
     }
+
     //got a good demod
     uint32_t raw1 = bytebits_to_byte(DemodBuffer + ans, 32);
     uint32_t raw2 = bytebits_to_byte(DemodBuffer + ans + 32, 32);
     uint32_t cardid = bytebits_to_byte(DemodBuffer + ans + 24, 32);
     uint8_t  checksum = bytebits_to_byte(DemodBuffer + ans + 32 + 24, 8);
-    PrintAndLogEx(SUCCESS, "Viking Tag Found: Card ID " _YELLOW_("%08X")" checksum "_YELLOW_("%02X"), cardid, checksum);
-    PrintAndLogEx(SUCCESS, "Raw hex: %08X%08X", raw1, raw2);
+    PrintAndLogEx(SUCCESS, "Viking - Card " _GREEN_("%08X") ", Raw: %08X%08X", cardid, raw1, raw2);
+    PrintAndLogEx(DEBUG, "Checksum: %02X", checksum);
     setDemodBuff(DemodBuffer, 64, ans);
     setClockGrid(g_DemodClock, g_DemodStartIdx + (ans * g_DemodClock));
     return PM3_SUCCESS;
 }
 
-//by marshmellow
 //see ASKDemod for what args are accepted
 static int CmdVikingRead(const char *Cmd) {
     lf_read(false, 10000);
@@ -107,7 +114,11 @@ static int CmdVikingClone(const char *Cmd) {
 
     num_to_bytes(rawID, 8, &payload.blocks[0]);
 
-    PrintAndLogEx(INFO, "Preparing to clone Viking tag - ID " _YELLOW_("%08X")" raw " _YELLOW_("%s"), id,  sprint_hex(payload.blocks, sizeof(payload.blocks)));
+    PrintAndLogEx(INFO, "Preparing to clone Viking tag on " _YELLOW_("%s") " - ID " _YELLOW_("%08X")" raw " _YELLOW_("%s")
+                  , (Q5) ? "Q5/T5555" : "T55x7"
+                  , id
+                  ,  sprint_hex(payload.blocks, sizeof(payload.blocks))
+                 );
 
     clearCommandBuffer();
 
@@ -133,7 +144,7 @@ static int CmdVikingSim(const char *Cmd) {
 
     rawID = getVikingBits(id);
 
-    PrintAndLogEx(SUCCESS, "Simulating Viking - ID " _YELLOW_("%08X")" raw "_YELLOW_("%08X%08X"), id, (uint32_t)(rawID >> 32), (uint32_t)(rawID & 0xFFFFFFFF));
+    PrintAndLogEx(SUCCESS, "Simulating Viking - ID " _YELLOW_("%08X") " raw " _YELLOW_("%08X%08X"), id, (uint32_t)(rawID >> 32), (uint32_t)(rawID & 0xFFFFFFFF));
 
     uint8_t bs[64];
     num_to_bytebits(rawID, sizeof(bs), bs);
@@ -162,7 +173,7 @@ static command_t CommandTable[] = {
     {"help",    CmdHelp,        AlwaysAvailable, "This help"},
     {"demod",   CmdVikingDemod, AlwaysAvailable, "Demodulate a Viking tag from the GraphBuffer"},
     {"read",    CmdVikingRead,  IfPm3Lf,         "Attempt to read and Extract tag data from the antenna"},
-    {"clone",   CmdVikingClone, IfPm3Lf,         "clone Viking tag to T55x7 (or to q5/T5555)"},
+    {"clone",   CmdVikingClone, IfPm3Lf,         "clone Viking tag to T55x7 or Q5/T5555"},
     {"sim",     CmdVikingSim,   IfPm3Lf,         "simulate Viking tag"},
     {NULL, NULL, NULL, NULL}
 };
@@ -211,7 +222,4 @@ int detectViking(uint8_t *src, size_t *size) {
     return (int)startIdx;
 }
 
-int demodViking(void) {
-    return CmdVikingDemod("");
-}
 
