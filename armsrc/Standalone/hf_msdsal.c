@@ -54,10 +54,10 @@ void ModInfo(void) {
 
 static uint8_t ppdol [255] = {0x80, 0xA8, 0x00, 0x00, 0x02, 0x83, 0x00}; // Default GET PROCESSING
 
-static uint8_t treatPDOL(uint8_t *apdu) {                  //Generate GET PROCESSING
+static uint8_t treatPDOL(uint8_t *apdu) {                //Generate GET PROCESSING
     uint8_t plen = 7;
     //PDOL Format: 80 A8 00 00 + (PDOL Length+2) + 83 + PDOL Length + PDOL + 00
-    for (uint8_t i = 1; i <= apdu[0]; i++) {          //Magic stuff, the generation order is important
+    for (uint8_t i = 1; i <= apdu[0]; i++) {            //Magic stuff, the generation order is important
         if (apdu[i] == 0x9F && apdu[i + 1] == 0x66) {   //Terminal Transaction Qualifiers
             ppdol[plen] = 0xF6;
             ppdol[plen + 1] = 0x20;
@@ -222,9 +222,9 @@ void RunMod(void) {
         // Was our button held down or pressed?
         int button_pressed = BUTTON_HELD(1000);
 
-        if (button_pressed  == BUTTON_HOLD)        //Holding down the button
+        if (button_pressed  == BUTTON_HOLD)                  //Holding down the button
             break;
-        else if (button_pressed == BUTTON_SINGLE_CLICK) { //Pressing one time change between reading & emulation
+        else if (button_pressed == BUTTON_SINGLE_CLICK) {    //Pressing one time change between reading & emulation
             if (state == STATE_READ) {
                 if (chktoken == true && token[0] != 0x00) {  //Only change to emulation if it saved a track 2 in memory
                     state = STATE_EMU;
@@ -265,11 +265,11 @@ void RunMod(void) {
 
                         for (uint8_t u = 0; u < apdulen; u++) {
                             if (i == 1) {
-                                if (apdubuffer[u] == 0x9F && apdubuffer[u + 1] == 0x38) {             //Check for PDOL
+                                if (apdubuffer[u] == 0x9F && apdubuffer[u + 1] == 0x38) {              //Check for PDOL
                                     for (uint8_t e = 0; e <= apdubuffer[u + 2]; e++)
                                         pdol[e] =  apdubuffer[u + e + 2];
 
-                                    plen = treatPDOL(pdol);                                             //Generate a challenge
+                                    plen = treatPDOL(pdol);                                            //Generate a challenge
                                     apdus[2] = ppdol;
                                     apdusLen[2] = plen;
                                     existpdol = true;
@@ -374,7 +374,7 @@ void RunMod(void) {
                         dynamic_response_info.response[0] = receivedCmd[0];
 
                         //Depending on card reader commands, the Proxmark will answer to fool the reader
-                        if (receivedCmd[2] == 0xA4 && receivedCmd[6] == 0x32 && prevCmd == 0) {                                 //Respond with PPSE
+                        if (receivedCmd[2] == 0xA4 && receivedCmd[6] == 0x32 && prevCmd == 0) {                                    //Respond with PPSE
                             uint8_t ppsea[39] = {0x6F, 0x23, 0x84, 0x0E, 0x32, 0x50, 0x41, 0x59, 0x2E, 0x53, 0x59, 0x53, 0x2E, 0x44, 0x44, 0x46, 0x30, 0x31, 0xA5, 0x11, 0xBF, 0x0C, 0x0E, 0x61, 0x0C, 0x4F, 0x07, 0xA0, 0x00, 0x00, 0x00, 0x03, 0x10, 0x10, 0x87, 0x01, 0x01, 0x90, 0x00};
                             memcpy(&dynamic_response_info.response[1], ppsea, sizeof(ppsea));
                             dynamic_response_info.response_n = sizeof(ppsea) + 1;
@@ -384,12 +384,12 @@ void RunMod(void) {
                             memcpy(&dynamic_response_info.response[1], visauid_long, sizeof(visauid_long));
                             dynamic_response_info.response_n = sizeof(visauid_long) + 1;
                             prevCmd++;
-                        } else if (receivedCmd[1] == 0x80 && receivedCmd[2] == 0xA8 && receivedCmd[6] == 0x83  && prevCmd == 2) { //GET PROCESSING
+                        } else if (receivedCmd[1] == 0x80 && receivedCmd[2] == 0xA8 && receivedCmd[6] == 0x83  && prevCmd == 2) {  //GET PROCESSING
                             uint8_t processing_long[10] = {0x80, 0x06, 0x00, 0x80, 0x08, 0x01, 0x01, 0x00, 0x90, 0x00};
                             memcpy(&dynamic_response_info.response[1], processing_long, sizeof(processing_long));
                             dynamic_response_info.response_n = sizeof(processing_long) + 1;
                             prevCmd++;
-                        } else if (receivedCmd[1] == 0x00 && receivedCmd[2] == 0xB2  && prevCmd == 3) {                         //SFI
+                        } else if (receivedCmd[1] == 0x00 && receivedCmd[2] == 0xB2  && prevCmd == 3) {                            //SFI
                             uint8_t last[4] =  {0x70, 0x15, 0x57, 0x13};
                             uint8_t statusapdu[2] = {0x90, 0x00};
                             uint8_t card[25];
