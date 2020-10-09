@@ -437,7 +437,8 @@ void RunMod(void) {
                     if (prevCmd >= 6) {
                         prevCmd = 0;
                         for (uint8_t i = 0; i < 2; i++) SpinDelay(1000);
-                        DbpString(_YELLOW_("!!") "Ready for next emulation!");
+                        DbpString(_YELLOW_("!!") "Done emulating!");
+                        state = STATE_READ;
                     }
                 }
             }
