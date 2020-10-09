@@ -439,6 +439,7 @@ void RunMod(void) {
                         for (uint8_t i = 0; i < 2; i++) SpinDelay(1000);
                         DbpString(_YELLOW_("!!") "Done emulating!");
                         state = STATE_READ;
+                        break;
                     }
                 }
             }
