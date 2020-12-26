@@ -18,7 +18,7 @@
 #include "BigBuf.h"
 #include "iso14443a.h"
 #include "protocols.h"
-//#include "cmd.h"
+#include "cmd.h"
 
 #include "usart.h" // Bluetooth reading & writing
 
