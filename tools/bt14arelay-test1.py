@@ -17,9 +17,7 @@ ser = serial.Serial('/dev/rfcomm0')  # open Proxmark3 Bluetooth port
 
 def pd(data):
         rapdu = map(ord, data)
-        #print('Card Response:'),
         return rapdu[:-1]
-        #print('--')
 
 #Commmads that will be send over Bluetooth
 apdu = [ 
