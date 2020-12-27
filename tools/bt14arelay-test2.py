@@ -13,7 +13,7 @@
 import serial
 from smartcard.util import toHexString
 
-ser = serial.Serial('/dev/rfcomm45')  # open Proxmark3 Bluetooth port
+ser = serial.Serial('/dev/rfcomm0')  # open Proxmark3 Bluetooth port
 
 def pd(data):
         rapdu = map(ord, data)
