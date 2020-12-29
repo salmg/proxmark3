@@ -54,10 +54,10 @@ void ModInfo(void) {
 
 static uint8_t ppdol [255] = {0x80, 0xA8, 0x00, 0x00, 0x02, 0x83, 0x00}; // Default GET PROCESSING
 
-static uint8_t treatPDOL(uint8_t *apdu) {                //Generate GET PROCESSING
+static uint8_t treatPDOL(uint8_t *apdu) {                  //Generate GET PROCESSING
     uint8_t plen = 7;
     //PDOL Format: 80 A8 00 00 + (PDOL Length+2) + 83 + PDOL Length + PDOL + 00
-    for (uint8_t i = 1; i <= apdu[0]; i++) {            //Magic stuff, the generation order is important
+    for (uint8_t i = 1; i <= apdu[0]; i++) {          //Magic stuff, the generation order is important
         if (apdu[i] == 0x9F && apdu[i + 1] == 0x66) {   //Terminal Transaction Qualifiers
             ppdol[plen] = 0xF6;
             ppdol[plen + 1] = 0x20;
@@ -139,7 +139,6 @@ void RunMod(void) {
 
     bool existpdol;
 
-
     // - MSD token card format -
     //
     //Card number: 4412 3456 0578 1234
@@ -152,13 +151,6 @@ void RunMod(void) {
     //
     char token[19] = {0x00};
     bool chktoken = false;
-
-//For emulation steps
-#define ATQA      0
-#define UIDC1     1
-#define SAKC1     3
-#define RATS      5
-#define SIGNATURE 7
 
 // Allocate 512 bytes for the dynamic modulation, created when the reader queries for it
 // Such a response is less time critical, so we can prepare them on the fly
@@ -222,9 +214,9 @@ void RunMod(void) {
         // Was our button held down or pressed?
         int button_pressed = BUTTON_HELD(1000);
 
-        if (button_pressed  == BUTTON_HOLD)                  //Holding down the button
+        if (button_pressed  == BUTTON_HOLD)        //Holding down the button
             break;
-        else if (button_pressed == BUTTON_SINGLE_CLICK) {    //Pressing one time change between reading & emulation
+        else if (button_pressed == BUTTON_SINGLE_CLICK) { //Pressing one time change between reading & emulation
             if (state == STATE_READ) {
                 if (chktoken == true && token[0] != 0x00) {  //Only change to emulation if it saved a track 2 in memory
                     state = STATE_EMU;
@@ -265,11 +257,11 @@ void RunMod(void) {
 
                         for (uint8_t u = 0; u < apdulen; u++) {
                             if (i == 1) {
-                                if (apdubuffer[u] == 0x9F && apdubuffer[u + 1] == 0x38) {              //Check for PDOL
+                                if (apdubuffer[u] == 0x9F && apdubuffer[u + 1] == 0x38) {             //Check for PDOL
                                     for (uint8_t e = 0; e <= apdubuffer[u + 2]; e++)
                                         pdol[e] =  apdubuffer[u + e + 2];
 
-                                    plen = treatPDOL(pdol);                                            //Generate a challenge
+                                    plen = treatPDOL(pdol);                                             //Generate a challenge
                                     apdus[2] = ppdol;
                                     apdusLen[2] = plen;
                                     existpdol = true;
@@ -305,6 +297,8 @@ void RunMod(void) {
                     DbpString("\n"_YELLOW_("!!") "Waiting for a card reader...");
                 }
             }
+            FpgaWriteConfWord(FPGA_MAJOR_MODE_OFF);
+            LED_D_OFF();
         } else if (state == STATE_EMU) {
             LED_A_OFF();
             LED_C_ON();
@@ -349,32 +343,33 @@ void RunMod(void) {
                 // Checking the commands order is important and elemental
                 if (receivedCmd[0] == ISO14443A_CMD_REQA && len == 1) {         // Received a REQUEST
                     DbpString(_YELLOW_("+") "REQUEST Received");
-                    p_response = &responses[ATQA];
+                    p_response = &responses[RESP_INDEX_ATQA];
                 } else if (receivedCmd[0] == ISO14443A_CMD_HALT && len == 4) {  // Received a HALT
                     DbpString(_YELLOW_("+") "Received a HALT");
                     p_response = NULL;
-                } else if (receivedCmd[0] == ISO14443A_CMD_WUPA && len == 1) {  // Received a WAKEUP //Este!!
+                } else if (receivedCmd[0] == ISO14443A_CMD_WUPA && len == 1) {  // Received a WAKEUP
                     DbpString(_YELLOW_("+") "WAKEUP Received");
-                    p_response = &responses[ATQA];
+                    p_response = &responses[RESP_INDEX_ATQA];
                     prevCmd = 0;
                 } else if (receivedCmd[1] == 0x20 && receivedCmd[0] == ISO14443A_CMD_ANTICOLL_OR_SELECT && len == 2) {  // Received request for UID (cascade 1)
                     DbpString(_YELLOW_("+") "Request for UID C1");
-                    p_response = &responses[UIDC1];
+                    p_response = &responses[RESP_INDEX_UIDC1];
                 } else if (receivedCmd[1] == 0x70 && receivedCmd[0] == ISO14443A_CMD_ANTICOLL_OR_SELECT && len == 9) {  // Received a SELECT (cascade 1)
                     DbpString(_YELLOW_("+") "Request for SELECT S1");
-                    p_response = &responses[SAKC1];
+                    p_response = &responses[RESP_INDEX_SAKC1];
                 } else if (receivedCmd[0] == ISO14443A_CMD_RATS && len == 4) {  // Received a RATS request
                     DbpString(_YELLOW_("+") "Request for RATS");
-                    p_response = &responses[RATS];
+                    p_response = &responses[RESP_INDEX_RATS];
                 } else {
+
                     DbpString(_YELLOW_("[ ") "Card reader command" _YELLOW_(" ]"));
                     Dbhexdump(len, receivedCmd, false);
-
+                    
                     if (receivedCmd[0] == 0x02 || receivedCmd[0] == 0x03) { //Emulate a Visa MSD(Magnetic stripe data) card
                         dynamic_response_info.response[0] = receivedCmd[0];
 
                         //Depending on card reader commands, the Proxmark will answer to fool the reader
-                        if (receivedCmd[2] == 0xA4 && receivedCmd[6] == 0x32 && prevCmd == 0) {                                    //Respond with PPSE
+                        if (receivedCmd[2] == 0xA4 && receivedCmd[6] == 0x32 && prevCmd == 0) {                                 //Respond with PPSE
                             uint8_t ppsea[39] = {0x6F, 0x23, 0x84, 0x0E, 0x32, 0x50, 0x41, 0x59, 0x2E, 0x53, 0x59, 0x53, 0x2E, 0x44, 0x44, 0x46, 0x30, 0x31, 0xA5, 0x11, 0xBF, 0x0C, 0x0E, 0x61, 0x0C, 0x4F, 0x07, 0xA0, 0x00, 0x00, 0x00, 0x03, 0x10, 0x10, 0x87, 0x01, 0x01, 0x90, 0x00};
                             memcpy(&dynamic_response_info.response[1], ppsea, sizeof(ppsea));
                             dynamic_response_info.response_n = sizeof(ppsea) + 1;
@@ -384,12 +379,12 @@ void RunMod(void) {
                             memcpy(&dynamic_response_info.response[1], visauid_long, sizeof(visauid_long));
                             dynamic_response_info.response_n = sizeof(visauid_long) + 1;
                             prevCmd++;
-                        } else if (receivedCmd[1] == 0x80 && receivedCmd[2] == 0xA8 && receivedCmd[6] == 0x83  && prevCmd == 2) {  //GET PROCESSING
+                        } else if (receivedCmd[1] == 0x80 && receivedCmd[2] == 0xA8 && receivedCmd[6] == 0x83  && prevCmd == 2) { //GET PROCESSING
                             uint8_t processing_long[10] = {0x80, 0x06, 0x00, 0x80, 0x08, 0x01, 0x01, 0x00, 0x90, 0x00};
                             memcpy(&dynamic_response_info.response[1], processing_long, sizeof(processing_long));
                             dynamic_response_info.response_n = sizeof(processing_long) + 1;
                             prevCmd++;
-                        } else if (receivedCmd[1] == 0x00 && receivedCmd[2] == 0xB2  && prevCmd == 3) {                            //SFI
+                        } else if (receivedCmd[1] == 0x00 && receivedCmd[2] == 0xB2  && prevCmd == 3) {                         //SFI
                             uint8_t last[4] =  {0x70, 0x15, 0x57, 0x13};
                             uint8_t statusapdu[2] = {0x90, 0x00};
                             uint8_t card[25];
@@ -403,7 +398,9 @@ void RunMod(void) {
                             uint8_t finished[2] = {0x6f, 0x00};
                             memcpy(&dynamic_response_info.response[1], finished, sizeof(finished));
                             dynamic_response_info.response_n = sizeof(finished) + 1;
-                            prevCmd++;
+                            if (prevCmd == 5) {
+                                prevCmd = 0;
+                            }
                         }
                     } else {
                         DbpString(_YELLOW_("!!") "Received unknown command!");
