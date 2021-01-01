@@ -259,7 +259,6 @@ void RunMod() {
                 SpinDelay(500);
                 state = STATE_READ;
                 DbpString(_YELLOW_("[ ") "Initialized reading mode" _YELLOW_(" ]"));
-                DbpString("\n" _YELLOW_("!!") "Waiting for a Visa card...");
                 break;
             }
 
