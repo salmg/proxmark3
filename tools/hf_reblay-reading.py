@@ -6,7 +6,7 @@
 // at your option, any later version. See the LICENSE.txt file for the text of
 // the license.
 //-----------------------------------------------------------------------------
-// Code to test Proxmark3 Standalone mode aka bt14arelay by Salvador Mendoza
+// Code to test Proxmark3 Standalone mode aka reblay by Salvador Mendoza
 //-----------------------------------------------------------------------------
 """
 
