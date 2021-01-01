@@ -136,7 +136,7 @@ void RunMod() {
     if (state == STATE_READ) {
         DbpString(_YELLOW_("[ ") "In reading mode" _YELLOW_(" ]"));
     } else {
-        DbpString(_YELLOW_("[ ") "In reading mode" _YELLOW_(" ]"));
+        DbpString(_YELLOW_("[ ") "In emulation mode" _YELLOW_(" ]"));
     }
 
     for (;;) {
