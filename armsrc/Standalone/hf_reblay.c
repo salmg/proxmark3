@@ -53,7 +53,7 @@ void ModInfo(void) {
 *
 *  Notes: 
 * - The emulation mode was tested in a real SumUp payment terminal. This does not mean 
-*   that it will work in all the terminal around the world.
+*   that it will work in all the terminals around the world.
 * - The emulation mode implements different techniques to try to keep the connection alive:
 *   WTX or ACK for NACK requests. Some of these requests could be denied depending on 
 *   the reader configuration.
