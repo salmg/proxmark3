@@ -37,7 +37,7 @@
 static char *g_android_executable_directory = NULL;
 static char *g_android_user_directory = NULL;
 
-char version_information[] = {"ANDROID_LIBRARY 1.4.6 build by DXL"};
+char version_information[] = {""};
 
 const char *get_my_executable_directory(void) {
     if (g_android_executable_directory == NULL) {
@@ -64,7 +64,7 @@ int push_cmdscriptfile(char *path, bool stayafter) { return PM3_SUCCESS; }
 static bool OpenPm3(void) {
     if (conn.run) { return true; }
     // Open with LocalSocket. Not a tcp connection!
-    bool ret = OpenProxmark("socket:"PM3_LOCAL_SOCKET_SERVER, false, 1000, false, 115200);
+    bool ret = OpenProxmark(session.current_device, "socket:"PM3_LOCAL_SOCKET_SERVER, false, 1000, false, 115200);
     return ret;
 }
 

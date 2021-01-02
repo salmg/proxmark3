@@ -69,6 +69,12 @@ else
 	SRC_EM4x50 =
 endif
 
+ifneq (,$(findstring WITH_EM4x70,$(APP_CFLAGS)))
+	SRC_EM4x70 = em4x70.c
+else
+	SRC_EM4x70 =
+endif
+
 ifneq (,$(findstring WITH_LCD,$(APP_CFLAGS)))
     SRC_LCD = fonts.c LCD.c
 else
@@ -106,6 +112,7 @@ THUMBSRC = start.c \
     $(SRC_FPC) \
     $(SRC_HITAG) \
 	$(SRC_EM4x50) \
+    $(SRC_EM4x70) \
     $(SRC_SPIFFS) \
     $(SRC_ISO14443a) \
     $(SRC_ISO14443b) \
@@ -210,8 +217,12 @@ $(OBJDIR)/fullimage.data.o: $(OBJDIR)/fullimage.data.bin.z
 	$(Q)$(OBJCOPY) -O elf32-littlearm -I binary -B arm --rename-section .data=compressed_data $^ $@
 
 $(OBJDIR)/fullimage.elf: $(OBJDIR)/fullimage.nodata.o $(OBJDIR)/fullimage.data.o
+ifeq (,$(findstring WITH_NO_COMPRESSION,$(APP_CFLAGS)))
 	$(info [=] LD $@)
 	$(Q)$(CC) $(CROSS_LDFLAGS) -Wl,-T,ldscript,-e,_osimage_entry,-Map,$(patsubst %.elf,%.map,$@) -o $@ $^
+else
+	$(Q)$(CP) $(OBJDIR)/fullimage.stage1.elf $@
+endif
 
 tarbin: $(OBJS)
 	$(info TAR $@)

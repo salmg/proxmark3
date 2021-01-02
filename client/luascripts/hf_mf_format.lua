@@ -14,7 +14,7 @@ This script will generate 'hf mf wrbl' commands for each block to format a Mifar
 Alla datablocks gets 0x00
 As default the script sets the keys A/B to 0xFFFFFFFFFFFF
 and the access bytes will become 0x78,0x77,0x88
-The GDB will become 0x00
+The GPB will become 0x00
 
 The script will skip the manufactoring block 0.
 ]]
@@ -36,7 +36,7 @@ arguments = [[
     -k <key>       - the current six byte key with write access
     -n <key>       - the new key that will be written to the card
     -a <access>    - the new access bytes that will be written to the card
-    -x             - execute the commands aswell.
+    -x             - execute the commands as well.
 ]]
 
 local TIMEOUT = 2000 -- Shouldn't take longer than 2 seconds
@@ -169,7 +169,7 @@ local function main(args)
     GetCardInfo()
 
     -- Show info
-    print( string.format('Estimating number of blocks: %d', numBlocks))
+    print( string.format('Estimating number of blocks: %d', numBlocks + 1))
     print( string.format('Old key:    %s', OldKey))
     print( string.format('New key:    %s', NewKey))
     print( string.format('New Access: %s', Accessbytes))

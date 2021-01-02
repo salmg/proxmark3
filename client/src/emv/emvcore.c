@@ -19,7 +19,6 @@
 #include "ui.h"
 #include "cmdhf14a.h"
 #include "dol.h"
-#include "dump.h"
 #include "emv_tags.h"
 #include "emvjson.h"
 #include "util_posix.h"
@@ -158,9 +157,9 @@ enum CardPSVendor GetCardPSVendor(uint8_t *AID, size_t AIDlen) {
 }
 
 static void print_cb(void *data, const struct tlv *tlv, int level, bool is_leaf) {
-    emv_tag_dump(tlv, stdout, level);
+    emv_tag_dump(tlv, level);
     if (is_leaf) {
-        dump_buffer(tlv->value, tlv->len, stdout, level);
+        print_buffer(tlv->value, tlv->len, level);
     }
 }
 
@@ -618,7 +617,7 @@ int EMVSelectApplication(struct tlvdb *tlv, uint8_t *AID, size_t *AIDlen) {
 }
 
 int EMVGPO(EMVCommandChannel channel, bool LeaveFieldON, uint8_t *PDOL, size_t PDOLLen, uint8_t *Result, size_t MaxResultLen, size_t *ResultLen, uint16_t *sw, struct tlvdb *tlv) {
-    return EMVExchange(channel, LeaveFieldON, (sAPDU) {0x80, 0xa8, 0x00, 0x00, PDOLLen, PDOL}, Result, MaxResultLen, ResultLen, sw, tlv);
+    return EMVExchangeEx(channel, false, LeaveFieldON, (sAPDU) {0x80, 0xa8, 0x00, 0x00, PDOLLen, PDOL}, true, Result, MaxResultLen, ResultLen, sw, tlv);
 }
 
 int EMVReadRecord(EMVCommandChannel channel, bool LeaveFieldON, uint8_t SFI, uint8_t SFIrec, uint8_t *Result, size_t MaxResultLen, size_t *ResultLen, uint16_t *sw, struct tlvdb *tlv) {
@@ -779,7 +778,7 @@ int trDDA(EMVCommandChannel channel, bool decodeTLV, struct tlvdb *tlv) {
     if (sdad_tlv) {
         PrintAndLogEx(INFO, "* * Got Signed Dynamic Application Data (9F4B) form GPO. Maybe fDDA...");
 
-        const struct tlvdb *atc_db = emv_pki_recover_atc_ex(icc_pk, tlv, true);
+        struct tlvdb *atc_db = emv_pki_recover_atc_ex(icc_pk, tlv, true);
         if (!atc_db) {
             PrintAndLogEx(ERR, "Error: Can't recover IDN (ICC Dynamic Number)");
             emv_pk_free(pk);
@@ -805,8 +804,10 @@ int trDDA(EMVCommandChannel channel, bool decodeTLV, struct tlvdb *tlv) {
             emv_pk_free(pk);
             emv_pk_free(issuer_pk);
             emv_pk_free(icc_pk);
+            tlvdb_free(atc_db);
             return 9;
         }
+
     } else {
         struct tlvdb *dac_db = emv_pki_recover_dac(issuer_pk, tlv, sda_tlv);
         if (dac_db) {

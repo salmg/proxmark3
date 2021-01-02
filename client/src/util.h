@@ -50,11 +50,13 @@ char *sprint_hex_ascii(const uint8_t *data, const size_t len);
 char *sprint_ascii(const uint8_t *data, const size_t len);
 char *sprint_ascii_ex(const uint8_t *data, const size_t len, const size_t min_str_len);
 
+void print_buffer(const uint8_t *data, const size_t len, int level);
 void print_blocks(uint32_t *data, size_t len);
 
 int hex_to_bytes(const char *hexValue, uint8_t *bytesValue, size_t maxBytesValueLen);
 void num_to_bytebits(uint64_t n, size_t len, uint8_t *dest);
 void num_to_bytebitsLSBF(uint64_t n, size_t len, uint8_t *dest);
+void bytes_to_bytebits(void *src, size_t srclen, void *dest);
 
 // Swap endian on arrays up to 64bytes.
 uint8_t *SwapEndian64(const uint8_t *src, const size_t len, const uint8_t blockSize);
@@ -101,4 +103,10 @@ void strcreplace(char *buf, size_t len, char from, char to);
 char *str_dup(const char *src);
 char *str_ndup(const char *src, size_t len);
 int hexstring_to_u96(uint32_t *hi2, uint32_t *hi, uint32_t *lo, const char *str);
+
+uint32_t bitcount32(uint32_t a);
+uint64_t bitcount64(uint64_t a);
+uint32_t leadingzeros32(uint32_t a);
+uint64_t leadingzeros64(uint64_t a);
+
 #endif

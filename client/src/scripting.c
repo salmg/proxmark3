@@ -36,6 +36,9 @@
 #include "fileutils.h"    // searchfile
 #include "cmdlf.h"        // lf_config
 #include "generator.h"
+#include "cmdlfem4x05.h"  // read 4305
+#include "cmdlfem4x50.h"  // read 4350
+#include "em4x50.h"       // 4x50 structs
 
 static int returnToLuaWithError(lua_State *L, const char *fmt, ...) {
     char buffer[200];
@@ -129,6 +132,7 @@ static int l_SendCommandOLD(lua_State *L) {
         }
     }
 
+    clearCommandBuffer();
     SendCommandOLD(cmd, arg0, arg1, arg2, data, len);
     lua_pushboolean(L, true);
     return 1;
@@ -176,6 +180,7 @@ static int l_SendCommandMIX(lua_State *L) {
         }
     }
 
+    clearCommandBuffer();
     SendCommandMIX(cmd, arg0, arg1, arg2, data, len);
     lua_pushboolean(L, true);
     return 1;
@@ -215,6 +220,7 @@ static int l_SendCommandNG(lua_State *L) {
         }
     }
 
+    clearCommandBuffer();
     SendCommandNG(cmd, data, len);
     lua_pushboolean(L, true);
     return 1;
@@ -387,8 +393,9 @@ static int l_WaitForResponseTimeout(lua_State *L) {
         ms_timeout = luaL_checkunsigned(L, 2);
 
     PacketResponseNG resp;
-    if (WaitForResponseTimeout(cmd, &resp, ms_timeout) == false)
+    if (WaitForResponseTimeout(cmd, &resp, ms_timeout) == false) {
         return returnToLuaWithError(L, "No response from the device");
+    }
 
     char foo[sizeof(PacketResponseNG)];
     n = 0;
@@ -426,7 +433,6 @@ static int l_WaitForResponseTimeout(lua_State *L) {
 
     //Push it as a string
     lua_pushlstring(L, (const char *)&foo, sizeof(foo));
-
     return 1;
 }
 
@@ -998,7 +1004,7 @@ static int l_T55xx_readblock(lua_State *L) {
                 return returnToLuaWithError(L, "Failed to read config block");
             }
 
-            if (!tryDetectModulation(0, true)) { // Default to prev. behaviour (default dl mode and print config)
+            if (!t55xxTryDetectModulation(0, true)) { // Default to prev. behaviour (default dl mode and print config)
                 PrintAndLogEx(NORMAL, "Safety Check: Could not detect if PWD bit is set in config block. Exits.");
                 return 0;
             } else {
@@ -1074,7 +1080,7 @@ static int l_T55xx_detect(lua_State *L) {
         }
     }
 
-    isok = tryDetectModulation(0, true); // Default to prev. behaviour (default dl mode and print config)
+    isok = t55xxTryDetectModulation(0, true); // Default to prev. behaviour (default dl mode and print config)
     if (isok == false) {
         return returnToLuaWithError(L, "Could not detect modulation automatically. Try setting it manually with \'lf t55xx config\'");
     }
@@ -1082,6 +1088,103 @@ static int l_T55xx_detect(lua_State *L) {
     lua_pushinteger(L, isok);
     lua_pushstring(L, "Success");
     return 2;
+}
+
+// 4305
+static int l_em4x05_read(lua_State *L) {
+
+    bool use_pwd = false;
+    uint32_t addr, password = 0;
+
+    //Check number of arguments
+    //int n = lua_gettop(L);
+
+    // get addr
+    size_t size = 0;
+    const char *p_addr = luaL_checklstring(L, 1, &size);
+    sscanf(p_addr, "%u", &addr);
+
+    // get password
+    const char *p_pwd = luaL_checkstring(L, 2);
+    if (p_pwd == NULL || strlen(p_pwd) == 0) {
+        use_pwd = false;
+    } else {
+        if (strlen(p_pwd) != 8)
+            return returnToLuaWithError(L, "Wrong size of password, got %zu , expected 8", strlen(p_pwd));
+
+        sscanf(p_pwd, "%08x", &password);
+        use_pwd = true;
+    }
+
+    PrintAndLogEx(DEBUG, "Addr %u", addr);
+    if (use_pwd)
+        PrintAndLogEx(DEBUG, " Pwd %08X", password);
+
+    uint32_t word = 0;
+    int res = em4x05_read_word_ext(addr, password, use_pwd, &word);
+    if (res != PM3_SUCCESS) {
+        return returnToLuaWithError(L, "Failed to read EM4x05 data");
+    }
+
+    lua_pushinteger(L, word);
+    return 1;
+}
+
+// 4350
+static int l_em4x50_read(lua_State *L) {
+
+    // get addr
+    size_t size = 0;
+    const char *p_addr = luaL_checklstring(L, 1, &size);
+    uint32_t addr = 0;
+    sscanf(p_addr, "%u", &addr);
+
+    if (addr > 31)
+        return returnToLuaWithError(L, "Address out-of-range (0..31) got %u", addr);
+
+    // setting up structures
+    em4x50_data_t etd;
+    memset(&etd, 0x00, sizeof(em4x50_data_t));
+    etd.addr_given = true;
+    etd.addresses = addr & 0xFF;
+
+    // get password
+    const char *p_pwd = luaL_checkstring(L, 2);
+    if (p_pwd == NULL || strlen(p_pwd) == 0) {
+        etd.pwd_given = false;
+    } else {
+        if (strlen(p_pwd) != 8)
+            return returnToLuaWithError(L, "Wrong size of password, got %zu , expected 8", strlen(p_pwd));
+
+        uint32_t pwd = 0;
+        sscanf(p_pwd, "%08x", &pwd);
+
+        PrintAndLogEx(DEBUG, " Pwd %08X", pwd);
+
+        etd.password1 = pwd;
+        etd.pwd_given = true;
+    }
+
+    PrintAndLogEx(DEBUG, "Addr %u", etd.addresses & 0xFF);
+    if (etd.pwd_given)
+        PrintAndLogEx(DEBUG, " Pwd %08x", etd.password1);
+
+    em4x50_word_t words[EM4X50_NO_WORDS];
+
+    int res = em4x50_read(&etd, words);
+    if (res != PM3_SUCCESS) {
+        return returnToLuaWithError(L, "Failed to read EM4x50 data");
+    }
+
+    uint32_t word = (
+                        words[etd.addresses & 0xFF].byte[0] << 24 |
+                        words[etd.addresses & 0xFF].byte[1] << 16 |
+                        words[etd.addresses & 0xFF].byte[2] << 8 |
+                        words[etd.addresses & 0xFF].byte[3]
+                    );
+    lua_pushinteger(L, word);
+
+    return 1;
 }
 
 //
@@ -1200,13 +1303,13 @@ static int l_cwd(lua_State *L) {
 // ref:  https://github.com/RfidResearchGroup/proxmark3/issues/891
 // redirect LUA's print to Proxmark3 PrintAndLogEx
 static int l_printandlogex(lua_State *L) {
-
     int n = lua_gettop(L);
     for (int i = 1; i <= n; i++) {
         if (lua_isstring(L, i)) {
-            PrintAndLogEx(NORMAL, "%s", lua_tostring(L, i));
+            PrintAndLogEx(NORMAL, "%s\t" NOLF, lua_tostring(L, i));
         }
     }
+    PrintAndLogEx(NORMAL, "");
     return 0;
 }
 
@@ -1244,7 +1347,7 @@ int set_pm3_libraries(lua_State *L) {
         {"WaitForResponseTimeout",      l_WaitForResponseTimeout},
         {"mfDarkside",                  l_mfDarkside},
         {"foobar",                      l_foobar},
-        {"kbd_enter_pressed",               l_kbd_enter_pressed},
+        {"kbd_enter_pressed",           l_kbd_enter_pressed},
         {"clearCommandBuffer",          l_clearCommandBuffer},
         {"console",                     l_CmdConsole},
         {"iso15693_crc",                l_iso15693_crc},
@@ -1275,6 +1378,8 @@ int set_pm3_libraries(lua_State *L) {
         {"ewd",                         l_ewd},
         {"ud",                          l_ud},
         {"rem",                         l_remark},
+        {"em4x05_read",                 l_em4x05_read},
+        {"em4x50_read",                 l_em4x50_read},
         {NULL, NULL}
     };
 

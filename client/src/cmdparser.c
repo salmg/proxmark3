@@ -101,6 +101,13 @@ bool IfPm3EM4x50(void) {
     return pm3_capabilities.compiled_with_em4x50;
 }
 
+bool IfPm3EM4x70(void) {
+
+    if (!IfPm3Present())
+        return false;
+    return pm3_capabilities.compiled_with_em4x70;
+}
+
 bool IfPm3Hfsniff(void) {
     if (!IfPm3Present())
         return false;
@@ -196,7 +203,7 @@ int CmdsParse(const command_t Commands[], const char *Cmd) {
         dumpCommandsRecursive(Commands, 1);
         return PM3_SUCCESS;
     }
-    
+
     if (strcmp(Cmd, "coffee") == 0) {
         PrintAndLogEx(NORMAL, "");
         PrintAndLogEx(NORMAL, "    ((\n     ))\n" _YELLOW_("  .______.\n  |      |]\n  \\      /\n   `----´\n\n"));

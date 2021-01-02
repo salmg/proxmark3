@@ -198,6 +198,7 @@ typedef struct {
     bool compiled_with_lf              : 1;
     bool compiled_with_hitag           : 1;
     bool compiled_with_em4x50          : 1;
+    bool compiled_with_em4x70          : 1;
     // hf
     bool compiled_with_hfsniff         : 1;
     bool compiled_with_hfplot          : 1;
@@ -238,6 +239,8 @@ typedef struct {
     uint32_t hi;
     uint32_t lo;
     uint8_t longFMT;
+    bool Q5;
+    bool EM;
 } PACKED lf_hidsim_t;
 
 // For CMD_LF_FSK_SIMULATE (FSK)
@@ -306,6 +309,7 @@ typedef struct {
     bool use_raw;
     bool use_elite;
     bool use_credit_key;
+    bool use_replay;
     bool send_reply;
     bool do_auth;
     uint8_t blockno;
@@ -334,10 +338,14 @@ typedef struct {
 
 // iCLASS dump data structure
 typedef struct {
+    uint8_t blockno;
+    uint8_t data[8];
+} PACKED iclass_restore_item_t;
+
+typedef struct {
     iclass_auth_req_t req;
-    uint8_t start_block;
-    uint8_t end_block;
-    uint8_t data[];
+    uint8_t item_cnt;
+    iclass_restore_item_t blocks[];
 } PACKED iclass_restore_req_t;
 
 
@@ -350,7 +358,7 @@ typedef struct {
     uint8_t mem_config;     //[13]
     uint8_t eas;            //[14]
     uint8_t fuses;          //[15]
-} picopass_conf_block_t;
+} PACKED picopass_conf_block_t;
 
 // iCLASS secure mode memory mapping
 typedef struct {
@@ -360,15 +368,21 @@ typedef struct {
     uint8_t key_d[8];
     uint8_t key_c[8];
     uint8_t app_issuer_area[8];
-} picopass_hdr;
+} PACKED picopass_hdr;
 
 // iCLASS non-secure mode memory mapping
 typedef struct {
     uint8_t csn[8];
     picopass_conf_block_t conf;
     uint8_t app_issuer_area[8];
-} picopass_ns_hdr;
+} PACKED picopass_ns_hdr;
 
+
+typedef struct {
+    uint16_t delay_us;
+    bool on;
+    bool off;
+} PACKED tearoff_params_t;
 
 // For the bootloader
 #define CMD_DEVICE_INFO                                                   0x0000
@@ -401,6 +415,7 @@ typedef struct {
 #define CMD_WTX                                                           0x0116
 #define CMD_TIA                                                           0x0117
 #define CMD_BREAK_LOOP                                                    0x0118
+#define CMD_SET_TEAROFF                                                   0x0119
 
 // RDV40, Flash memory operations
 #define CMD_FLASHMEM_WRITE                                                0x0121
@@ -484,15 +499,29 @@ typedef struct {
 #define CMD_LF_T55XX_RESET_READ                                           0x0216
 #define CMD_LF_PCF7931_READ                                               0x0217
 #define CMD_LF_PCF7931_WRITE                                              0x0223
+#define CMD_LF_EM4X_LOGIN                                                 0x0229
 #define CMD_LF_EM4X_READWORD                                              0x0218
 #define CMD_LF_EM4X_WRITEWORD                                             0x0219
+#define CMD_LF_EM4X_PROTECTWORD                                           0x021B
+#define CMD_LF_EM4X_BF                                                    0x022A
 #define CMD_LF_IO_WATCH                                                   0x021A
 #define CMD_LF_EM410X_WATCH                                               0x021C
 #define CMD_LF_EM4X50_INFO                                                0x0240
 #define CMD_LF_EM4X50_WRITE                                               0x0241
-#define CMD_LF_EM4X50_WRITE_PASSWORD                                      0x0242
+#define CMD_LF_EM4X50_WRITEPWD                                            0x0242
 #define CMD_LF_EM4X50_READ                                                0x0243
-#define CMD_LF_EM4X50_WIPE                                                0x0244
+#define CMD_LF_EM4X50_BRUTE                                               0x0245
+#define CMD_LF_EM4X50_LOGIN                                               0x0246
+#define CMD_LF_EM4X50_SIM                                                 0x0250
+#define CMD_LF_EM4X50_READER                                              0x0251
+#define CMD_LF_EM4X50_ESET                                                0x0252
+#define CMD_LF_EM4X50_CHK                                                 0x0253
+#define CMD_LF_EM4X70_INFO                                                0x0260
+#define CMD_LF_EM4X70_WRITE                                               0x0261
+#define CMD_LF_EM4X70_UNLOCK                                              0x0262
+#define CMD_LF_EM4X70_AUTH                                                0x0263
+#define CMD_LF_EM4X70_WRITEPIN                                            0x0264
+#define CMD_LF_EM4X70_WRITEKEY                                            0x0265
 // Sampling configuration for LF reader/sniffer
 #define CMD_LF_SAMPLING_SET_CONFIG                                        0x021D
 #define CMD_LF_FSK_SIMULATE                                               0x021E
@@ -557,12 +586,10 @@ typedef struct {
 
 // iCLASS / Picopass
 #define CMD_HF_ICLASS_READCHECK                                           0x038F
-#define CMD_HF_ICLASS_CLONE                                               0x0390
 #define CMD_HF_ICLASS_DUMP                                                0x0391
 #define CMD_HF_ICLASS_SNIFF                                               0x0392
 #define CMD_HF_ICLASS_SIMULATE                                            0x0393
 #define CMD_HF_ICLASS_READER                                              0x0394
-#define CMD_HF_ICLASS_REPLAY                                              0x0395
 #define CMD_HF_ICLASS_READBL                                              0x0396
 #define CMD_HF_ICLASS_WRITEBL                                             0x0397
 #define CMD_HF_ICLASS_EML_MEMSET                                          0x0398
@@ -648,6 +675,9 @@ typedef struct {
 
 // MFU OTP TearOff
 #define CMD_HF_MFU_OTP_TEAROFF                                            0x0740
+// MFU_Ev1 Counter TearOff
+#define CMD_HF_MFU_COUNTER_TEAROFF                                        0x0741
+
 
 #define CMD_HF_SNIFF                                                      0x0800
 #define CMD_HF_PLOT                                                       0x0801
@@ -773,8 +803,13 @@ typedef struct {
 
 // execute pm3 cmd failed               client/pm3: when one of our pm3 cmd tries and fails. opposite from PM3_SUCCESS
 #define PM3_EFAILED           -21
-// partial success                      client/pm3: when tring to dump a tag and fails on some blocks.  Partial dump.
+// partial success                      client/pm3: when trying to dump a tag and fails on some blocks.  Partial dump.
 #define PM3_EPARTIAL          -22
+// tearoff occured                      client/pm3: when a tearoff hook was called and a tearoff actually happened
+#define PM3_ETEAROFF          -23
+
+// Got bad CRC                          client/pm3: error in transfer of data,  crc mismatch.
+#define PM3_ECRC              -24
 
 // No data                              pm3:        no data available, no host frame available (not really an error)
 #define PM3_ENODATA           -98

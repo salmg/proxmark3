@@ -13,14 +13,14 @@
 
 #include "../include/em4x50.h"
 
-typedef struct {
-    uint8_t sectors[34][7];
-} em4x50_tag_t;
-
 void em4x50_info(em4x50_data_t *etd);
 void em4x50_write(em4x50_data_t *etd);
-void em4x50_write_password(em4x50_data_t *etd);
+void em4x50_writepwd(em4x50_data_t *etd);
 void em4x50_read(em4x50_data_t *etd);
-void em4x50_wipe(em4x50_data_t *etd);
+void em4x50_brute(em4x50_data_t *etd);
+void em4x50_login(uint32_t *password);
+void em4x50_sim(uint8_t *filename);
+void em4x50_reader(void);
+void em4x50_chk(uint8_t *filename);
 
 #endif /* EM4X50_H */

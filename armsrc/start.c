@@ -14,18 +14,19 @@
 
 #include "proxmark3_arm.h"
 #include "appmain.h"
+#ifndef WITH_NO_COMPRESSION
 #include "lz4.h"
+#endif
 #include "BigBuf.h"
 #include "string.h"
 
-static uint8_t *next_free_memory;
 extern struct common_area common_area;
 extern char __data_src_start__, __data_start__, __data_end__, __bss_start__, __bss_end__;
 
+#ifndef WITH_NO_COMPRESSION
 static void uncompress_data_section(void) {
-    next_free_memory = BigBuf_get_addr();
     int avail_in;
-    memcpy(&avail_in, &__data_start__, sizeof(int));
+    memcpy(&avail_in, &__data_src_start__, sizeof(int));
     int avail_out = &__data_end__ - &__data_start__;  // uncompressed size. Correct.
     // uncompress data segment to RAM
     uintptr_t p = (uintptr_t)&__data_src_start__;
@@ -34,19 +35,36 @@ static void uncompress_data_section(void) {
     if (res < 0)
         return;
     // save the size of the compressed data section
-    common_area.arg1 = res;
+    common_area.arg1 = avail_in;
 }
+#endif
 
 void __attribute__((section(".startos"))) Vector(void);
 void Vector(void) {
     /* Stack should have been set up by the bootloader */
 
+    if (common_area.magic != COMMON_AREA_MAGIC || common_area.version != 1) {
+        /* Initialize common area */
+        memset(&common_area, 0, sizeof(common_area));
+        common_area.magic = COMMON_AREA_MAGIC;
+        common_area.version = 1;
+    }
+    common_area.flags.osimage_present = 1;
+
+    /* Set up data segment: Copy from flash to ram */
+#ifdef WITH_NO_COMPRESSION
+    char *data_src = &__data_src_start__;
+    char *data_dst = &__data_start__;
+    char *data_end = &__data_end__;
+    while (data_dst < data_end) *data_dst++ = *data_src++;
+#else
     uncompress_data_section();
+#endif
 
     /* Set up (that is: clear) BSS. */
-    char *dst = &__bss_start__;
-    char *end = &__bss_end__;
-    while (dst < end) *dst++ = 0;
+    char *bss_dst = &__bss_start__;
+    char *bss_end = &__bss_end__;
+    while (bss_dst < bss_end) *bss_dst++ = 0;
 
     AppMain();
 }

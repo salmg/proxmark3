@@ -39,9 +39,8 @@ int lf_awid_watch(int findone, uint32_t *high, uint32_t *low); // Realtime demod
 int lf_em410x_watch(int findone, uint32_t *high, uint64_t *low);
 int lf_io_watch(int findone, uint32_t *high, uint32_t *low);
 
-void CopyHIDtoT55x7(uint32_t hi2, uint32_t hi, uint32_t lo, uint8_t longFMT); // Clone an HID card to T5557/T5567
-
-void CopyVikingtoT55xx(uint8_t *blocks, uint8_t Q5);
+void CopyHIDtoT55x7(uint32_t hi2, uint32_t hi, uint32_t lo, uint8_t longFMT, bool q5, bool em); // Clone an HID card to T5557/T5567
+void CopyVikingtoT55xx(uint8_t *blocks, bool q5, bool em);
 
 int copy_em410x_to_t55xx(uint8_t card, uint8_t clock, uint32_t id_hi, uint32_t id_lo);
 
@@ -56,8 +55,11 @@ void T55xxDangerousRawTest(uint8_t *data);
 
 void TurnReadLFOn(uint32_t delay);
 
+void EM4xLogin(uint32_t pwd);
+void EM4xBruteforce(uint32_t start_pwd, uint32_t n);
 void EM4xReadWord(uint8_t addr, uint32_t pwd, uint8_t usepwd);
 void EM4xWriteWord(uint8_t addr, uint32_t data, uint32_t pwd, uint8_t usepwd);
+void EM4xProtectWord(uint32_t data, uint32_t pwd, uint8_t usepwd);
 
 void Cotag(uint32_t arg0);
 void setT55xxConfig(uint8_t arg0, t55xx_configurations_t *c);

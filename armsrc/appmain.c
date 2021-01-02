@@ -31,6 +31,7 @@
 #include "hitag2.h"
 #include "hitagS.h"
 #include "em4x50.h"
+#include "em4x70.h"
 #include "iclass.h"
 #include "legicrfsim.h"
 //#include "cryptorfsim.h"
@@ -46,6 +47,7 @@
 #include "util.h"
 #include "ticks.h"
 #include "commonutil.h"
+#include "crc16.h"
 
 #ifdef WITH_LCD
 #include "LCD.h"
@@ -64,10 +66,37 @@
 #include "spiffs.h"
 #endif
 
+int DBGLEVEL = DBG_ERROR;
+uint8_t g_trigger = 0;
+bool g_hf_field_active = false;
 extern uint32_t _stack_start, _stack_end;
 struct common_area common_area __attribute__((section(".commonarea")));
 static int button_status = BUTTON_NO_CLICK;
 static bool allow_send_wtx = false;
+static uint16_t tearoff_delay_us = 0;
+static bool tearoff_enabled = false;
+
+int tearoff_hook(void) {
+    if (tearoff_enabled) {
+        if (tearoff_delay_us == 0) {
+            Dbprintf(_RED_("No tear-off delay configured!"));
+            return PM3_SUCCESS; // SUCCESS = the hook didn't do anything
+        }
+        SpinDelayUsPrecision(tearoff_delay_us);
+        FpgaWriteConfWord(FPGA_MAJOR_MODE_OFF);
+        tearoff_enabled = false;
+        Dbprintf(_YELLOW_("Tear-off triggered!"));
+        return PM3_ETEAROFF;
+    } else {
+        return PM3_SUCCESS;     // SUCCESS = the hook didn't do anything
+    }
+}
+
+void hf_field_off(void) {
+    FpgaWriteConfWord(FPGA_MAJOR_MODE_OFF);
+    LEDsoff();
+    g_hf_field_active = false;
+}
 
 void send_wtx(uint16_t wtx) {
     if (allow_send_wtx) {
@@ -228,6 +257,9 @@ void ReadMem(int addr) {
 /* osimage version information is linked in, cf commonutil.h */
 /* bootrom version information is pointed to from _bootphase1_version_pointer */
 extern char *_bootphase1_version_pointer, _flash_start, _flash_end, __data_src_start__;
+#ifdef WITH_NO_COMPRESSION
+extern char *_bootrom_end, _bootrom_start, __os_size__;
+#endif
 static void SendVersion(void) {
     char temp[PM3_CMD_DATA_SIZE - 12]; /* Limited data payload in USB packets */
     char VersionString[PM3_CMD_DATA_SIZE - 12] = { '\0' };
@@ -266,9 +298,11 @@ static void SendVersion(void) {
             strncat(VersionString, "\n ", sizeof(VersionString) - strlen(VersionString) - 1);
         }
     }
+#ifndef WITH_NO_COMPRESSION
     // Send Chip ID and used flash memory
     uint32_t text_and_rodata_section_size = (uint32_t)&__data_src_start__ - (uint32_t)&_flash_start;
     uint32_t compressed_data_section_size = common_area.arg1;
+#endif
 
     struct p {
         uint32_t id;
@@ -279,7 +313,11 @@ static void SendVersion(void) {
 
     struct p payload;
     payload.id = *(AT91C_DBGU_CIDR);
+#ifdef WITH_NO_COMPRESSION
+    payload.section_size = (uint32_t)&_bootrom_end - (uint32_t)&_bootrom_start + (uint32_t)&__os_size__;
+#else
     payload.section_size = text_and_rodata_section_size + compressed_data_section_size;
+#endif
     payload.versionstr_len = strlen(VersionString) + 1;
     memcpy(payload.versionstr, VersionString, payload.versionstr_len);
 
@@ -451,6 +489,12 @@ static void SendCapabilities(void) {
 #else
     capabilities.compiled_with_em4x50 = false;
 #endif
+#ifdef WITH_EM4x70
+    capabilities.compiled_with_em4x70 = true;
+#else
+    capabilities.compiled_with_em4x70 = false;
+#endif
+
 #ifdef WITH_HFSNIFF
     capabilities.compiled_with_hfsniff = true;
 #else
@@ -731,6 +775,24 @@ static void PacketReceived(PacketCommandNG *packet) {
             reply_ng(CMD_SET_DBGMODE, PM3_SUCCESS, NULL, 0);
             break;
         }
+        case CMD_SET_TEAROFF: {
+            struct p {
+                uint16_t delay_us;
+                bool on;
+                bool off;
+            } PACKED;
+            struct p *payload = (struct p *)packet->data.asBytes;
+            if (payload->on && payload->off)
+                reply_ng(CMD_SET_TEAROFF, PM3_EINVARG, NULL, 0);
+            if (payload->on)
+                tearoff_enabled = true;
+            if (payload->off)
+                tearoff_enabled = false;
+            if (payload->delay_us > 0)
+                tearoff_delay_us = payload->delay_us;
+            reply_ng(CMD_SET_TEAROFF, PM3_SUCCESS, NULL, 0);
+            break;
+        }
         // always available
         case CMD_HF_DROPFIELD: {
             hf_field_off();
@@ -827,7 +889,8 @@ static void PacketReceived(PacketCommandNG *packet) {
             break;
         }
         case CMD_LF_HID_CLONE: {
-            CopyHIDtoT55x7(packet->oldarg[0], packet->oldarg[1], packet->oldarg[2], packet->data.asBytes[0]);
+            lf_hidsim_t *payload = (lf_hidsim_t *)packet->data.asBytes;
+            CopyHIDtoT55x7(payload->hi2, payload->hi, payload->lo, payload->longFMT, payload->Q5, payload->EM);
             break;
         }
         case CMD_LF_IO_WATCH: {
@@ -860,7 +923,13 @@ static void PacketReceived(PacketCommandNG *packet) {
             break;
         }
         case CMD_LF_TI_WRITE: {
-            WriteTItag(packet->oldarg[0], packet->oldarg[1], packet->oldarg[2]);
+            struct p {
+                uint32_t high;
+                uint32_t low;
+                uint16_t crc;
+            } PACKED;
+            struct p *payload = (struct p *)packet->data.asBytes;
+            WriteTItag(payload->high, payload->low, packet->crc);
             break;
         }
         case CMD_LF_SIMULATE: {
@@ -933,6 +1002,23 @@ static void PacketReceived(PacketCommandNG *packet) {
             );
             break;
         }
+        case CMD_LF_EM4X_LOGIN: {
+            struct p {
+                uint32_t password;
+            } PACKED;
+            struct p *payload = (struct p *) packet->data.asBytes;
+            EM4xLogin(payload->password);
+            break;
+        }
+        case CMD_LF_EM4X_BF: {
+            struct p {
+                uint32_t start_pwd;
+                uint32_t n;
+            } PACKED;
+            struct p *payload = (struct p *) packet->data.asBytes;
+            EM4xBruteforce(payload->start_pwd, payload->n);
+            break;
+        }
         case CMD_LF_EM4X_READWORD: {
             struct p {
                 uint32_t password;
@@ -954,6 +1040,16 @@ static void PacketReceived(PacketCommandNG *packet) {
             EM4xWriteWord(payload->address, payload->data, payload->password, payload->usepwd);
             break;
         }
+        case CMD_LF_EM4X_PROTECTWORD: {
+            struct p {
+                uint32_t password;
+                uint32_t data;
+                uint8_t usepwd;
+            } PACKED;
+            struct p *payload = (struct p *) packet->data.asBytes;
+            EM4xProtectWord(payload->data, payload->password, payload->usepwd);
+            break;
+        }
         case CMD_LF_AWID_WATCH:  {
             uint32_t high, low;
             int res = lf_awid_watch(0, &high, &low);
@@ -963,10 +1059,11 @@ static void PacketReceived(PacketCommandNG *packet) {
         case CMD_LF_VIKING_CLONE: {
             struct p {
                 bool Q5;
+                bool EM;
                 uint8_t blocks[8];
             } PACKED;
             struct p *payload = (struct p *)packet->data.asBytes;
-            CopyVikingtoT55xx(payload->blocks, payload->Q5);
+            CopyVikingtoT55xx(payload->blocks, payload->Q5, payload->EM);
             break;
         }
         case CMD_LF_COTAG_READ: {
@@ -1025,16 +1122,81 @@ static void PacketReceived(PacketCommandNG *packet) {
             em4x50_write((em4x50_data_t *)packet->data.asBytes);
             break;
         }
-        case CMD_LF_EM4X50_WRITE_PASSWORD: {
-            em4x50_write_password((em4x50_data_t *)packet->data.asBytes);
+        case CMD_LF_EM4X50_WRITEPWD: {
+            em4x50_writepwd((em4x50_data_t *)packet->data.asBytes);
             break;
         }
         case CMD_LF_EM4X50_READ: {
             em4x50_read((em4x50_data_t *)packet->data.asBytes);
             break;
         }
-        case CMD_LF_EM4X50_WIPE: {
-            em4x50_wipe((em4x50_data_t *)packet->data.asBytes);
+        case CMD_LF_EM4X50_BRUTE: {
+            em4x50_brute((em4x50_data_t *)packet->data.asBytes);
+            break;
+        }
+        case CMD_LF_EM4X50_LOGIN: {
+            em4x50_login((uint32_t *)packet->data.asBytes);
+            break;
+        }
+        case CMD_LF_EM4X50_SIM: {
+            //-----------------------------------------------------------------------------
+            // Note: we call FpgaDownloadAndGo(FPGA_BITSTREAM_LF) here although FPGA is not
+            // involved in dealing with emulator memory. But if it is called later, it might
+            // destroy the Emulator Memory.
+            //-----------------------------------------------------------------------------
+            FpgaDownloadAndGo(FPGA_BITSTREAM_LF);
+            em4x50_sim((uint8_t *)packet->data.asBytes);
+            break;
+        }
+        case CMD_LF_EM4X50_READER: {
+            em4x50_reader();
+            break;
+        }
+        case CMD_LF_EM4X50_ESET: {
+            //-----------------------------------------------------------------------------
+            // Note: we call FpgaDownloadAndGo(FPGA_BITSTREAM_LF) here although FPGA is not
+            // involved in dealing with emulator memory. But if it is called later, it might
+            // destroy the Emulator Memory.
+            //-----------------------------------------------------------------------------
+            FpgaDownloadAndGo(FPGA_BITSTREAM_LF);
+            emlSet(packet->data.asBytes, packet->oldarg[0], packet->oldarg[1]);
+            break;
+        }
+        case CMD_LF_EM4X50_CHK: {
+            //-----------------------------------------------------------------------------
+            // Note: we call FpgaDownloadAndGo(FPGA_BITSTREAM_LF) here although FPGA is not
+            // involved in dealing with emulator memory. But if it is called later, it might
+            // destroy the Emulator Memory.
+            //-----------------------------------------------------------------------------
+            FpgaDownloadAndGo(FPGA_BITSTREAM_LF);
+            em4x50_chk((uint8_t *)packet->data.asBytes);
+            break;
+        }
+#endif
+
+#ifdef WITH_EM4x70
+        case CMD_LF_EM4X70_INFO: {
+            em4x70_info((em4x70_data_t *)packet->data.asBytes);
+            break;
+        }
+        case CMD_LF_EM4X70_WRITE: {
+            em4x70_write((em4x70_data_t *)packet->data.asBytes);
+            break;
+        }
+        case CMD_LF_EM4X70_UNLOCK: {
+            em4x70_unlock((em4x70_data_t *)packet->data.asBytes);
+            break;
+        }
+        case CMD_LF_EM4X70_AUTH: {
+            em4x70_auth((em4x70_data_t *)packet->data.asBytes);
+            break;
+        }
+        case CMD_LF_EM4X70_WRITEPIN: {
+            em4x70_write_pin((em4x70_data_t *)packet->data.asBytes);
+            break;
+        }
+        case CMD_LF_EM4X70_WRITEKEY: {
+            em4x70_write_key((em4x70_data_t *)packet->data.asBytes);
             break;
         }
 #endif
@@ -1117,7 +1279,11 @@ static void PacketReceived(PacketCommandNG *packet) {
 
 #ifdef WITH_ISO14443b
         case CMD_HF_SRI_READ: {
-            ReadSTMemoryIso14443b(packet->oldarg[0]);
+            struct p {
+                uint8_t blockno;
+            } PACKED;
+            struct p *payload = (struct p *) packet->data.asBytes;
+            ReadSTBlock(payload->blockno);
             break;
         }
         case CMD_HF_ISO14443B_SNIFF: {
@@ -1126,11 +1292,10 @@ static void PacketReceived(PacketCommandNG *packet) {
             break;
         }
         case CMD_HF_ISO14443B_SIMULATE: {
-            SimulateIso14443bTag(packet->oldarg[0]);
+            SimulateIso14443bTag(packet->data.asBytes);
             break;
         }
         case CMD_HF_ISO14443B_COMMAND: {
-            //SendRawCommand14443B(packet->oldarg[0],packet->oldarg[1],packet->oldarg[2],packet->data.asBytes);
             SendRawCommand14443B_Ex(packet);
             break;
         }
@@ -1190,13 +1355,18 @@ static void PacketReceived(PacketCommandNG *packet) {
                 uint8_t tagtype;
                 uint8_t flags;
                 uint8_t uid[10];
+                uint8_t exitAfter;
             } PACKED;
             struct p *payload = (struct p *) packet->data.asBytes;
-            SimulateIso14443aTag(payload->tagtype, payload->flags, payload->uid);  // ## Simulate iso14443a tag - pass tag type & UID
+            SimulateIso14443aTag(payload->tagtype, payload->flags, payload->uid, payload->exitAfter);  // ## Simulate iso14443a tag - pass tag type & UID
             break;
         }
         case CMD_HF_ISO14443A_ANTIFUZZ: {
-            iso14443a_antifuzz(packet->oldarg[0]);
+            struct p {
+                uint8_t flag;
+            } PACKED;
+            struct p *payload = (struct p *) packet->data.asBytes;
+            iso14443a_antifuzz(payload->flag);
             break;
         }
         case CMD_HF_EPA_COLLECT_NONCE: {
@@ -1427,6 +1597,16 @@ static void PacketReceived(PacketCommandNG *packet) {
             MifareU_Otp_Tearoff(packet->oldarg[0], packet->oldarg[1], packet->data.asBytes);
             break;
         }
+        case CMD_HF_MFU_COUNTER_TEAROFF: {
+            struct p {
+                uint8_t counter;
+                uint32_t tearoff_time;
+                uint8_t value[4];
+            } PACKED;
+            struct p *payload = (struct p *) packet->data.asBytes;
+            MifareU_Counter_Tearoff(payload->counter, payload->tearoff_time, payload->value);
+            break;
+        }
         case CMD_HF_MIFARE_STATIC_NONCE: {
             MifareHasStaticNonce();
             break;
@@ -1457,20 +1637,19 @@ static void PacketReceived(PacketCommandNG *packet) {
             break;
         }
         case CMD_HF_ICLASS_SIMULATE: {
+            /*
+                        struct p {
+                            uint8_t reader[4];
+                            uint8_t mac[4];
+                        } PACKED;
+                        struct p *payload = (struct p *) packet->data.asBytes;
+            */
+
             SimulateIClass(packet->oldarg[0], packet->oldarg[1], packet->oldarg[2], packet->data.asBytes);
             break;
         }
         case CMD_HF_ICLASS_READER: {
             ReaderIClass(packet->oldarg[0]);
-            break;
-        }
-        case CMD_HF_ICLASS_REPLAY: {
-            struct p {
-                uint8_t reader[4];
-                uint8_t mac[4];
-            } PACKED;
-            struct p *payload = (struct p *) packet->data.asBytes;
-            ReaderIClass_Replay(payload->reader, payload->mac);
             break;
         }
         case CMD_HF_ICLASS_EML_MEMSET: {
@@ -1499,18 +1678,8 @@ static void PacketReceived(PacketCommandNG *packet) {
             iClass_Dump(packet->data.asBytes);
             break;
         }
-        case CMD_HF_ICLASS_CLONE: {
-            struct p {
-                uint8_t startblock;
-                uint8_t endblock;
-                uint8_t data[];
-            } PACKED;
-            struct p *payload = (struct p *)packet->data.asBytes;
-            iClass_Clone(payload->startblock, payload->endblock, payload->data);
-            break;
-        }
         case CMD_HF_ICLASS_RESTORE: {
-            iClass_Restore(packet->data.asBytes);
+            iClass_Restore((iclass_restore_req_t *)packet->data.asBytes);
             break;
         }
 #endif
@@ -1552,7 +1721,11 @@ static void PacketReceived(PacketCommandNG *packet) {
             break;
         }
         case CMD_SMART_SETCLOCK: {
-            SmartCardSetClock(packet->oldarg[0]);
+            struct p {
+                uint32_t new_clk;
+            } PACKED;
+            struct p *payload = (struct p *)packet->data.asBytes;
+            SmartCardSetClock(payload->new_clk);
             break;
         }
         case CMD_SMART_RAW: {
@@ -1561,13 +1734,44 @@ static void PacketReceived(PacketCommandNG *packet) {
         }
         case CMD_SMART_UPLOAD: {
             // upload file from client
+            struct p {
+                uint32_t idx;
+                uint32_t bytes_in_packet;
+                uint16_t crc;
+                uint8_t data[400];
+            } PACKED;
+            struct p *payload = (struct p *)packet->data.asBytes;
             uint8_t *mem = BigBuf_get_addr();
-            memcpy(mem + packet->oldarg[0], packet->data.asBytes, PM3_CMD_DATA_SIZE);
-            reply_mix(CMD_ACK, 1, 0, 0, 0, 0);
+            memcpy(mem + payload->idx, payload->data, payload->bytes_in_packet);
+
+            uint8_t a = 0, b = 0;
+            compute_crc(CRC_14443_A, mem + payload->idx,  payload->bytes_in_packet, &a, &b);
+            int res = PM3_SUCCESS;
+            if (payload->crc != (a << 8 | b)) {
+                DbpString("CRC Failed");
+                res = PM3_ESOFT;
+            }
+            reply_ng(CMD_SMART_UPLOAD, res, NULL, 0);
             break;
         }
         case CMD_SMART_UPGRADE: {
-            SmartCardUpgrade(packet->oldarg[0]);
+            struct p {
+                uint16_t fw_size;
+                uint16_t crc;
+            } PACKED;
+            struct p *payload = (struct p *)packet->data.asBytes;
+
+            uint8_t *fwdata = BigBuf_get_addr();
+            uint8_t a = 0, b = 0;
+            compute_crc(CRC_14443_A, fwdata, payload->fw_size, &a, &b);
+
+            if (payload->crc != (a << 8 | b)) {
+                Dbprintf("CRC Failed, 0x[%04x] != 0x[%02x%02x]", payload->crc, a, b);
+                reply_ng(CMD_SMART_UPGRADE, PM3_ESOFT, NULL, 0);
+            } else {
+                SmartCardUpgrade(payload->fw_size);
+            }
+            fwdata = NULL;
             break;
         }
 #endif
@@ -2193,14 +2397,6 @@ void  __attribute__((noreturn)) AppMain(void) {
     for (uint32_t *p = &_stack_start; p < (uint32_t *)((uintptr_t)&_stack_end - 0x200); ++p) {
         *p = 0xdeadbeef;
     }
-
-    if (common_area.magic != COMMON_AREA_MAGIC || common_area.version != 1) {
-        /* Initialize common area */
-        memset(&common_area, 0, sizeof(common_area));
-        common_area.magic = COMMON_AREA_MAGIC;
-        common_area.version = 1;
-    }
-    common_area.flags.osimage_present = 1;
 
     LEDsoff();
 

@@ -494,6 +494,47 @@ int saveFileJSONex(const char *preferredName, JSONFileType ftype, uint8_t *data,
             }
             break;
         }
+        case jsfEM4x05: {
+            JsonSaveStr(root, "FileType", "EM4205/EM4305");
+            JsonSaveBufAsHexCompact(root, "$.Card.UID", data + (1 * 4), 4);
+            JsonSaveBufAsHexCompact(root, "$.Card.Config", data + (4 * 4), 4);
+            JsonSaveBufAsHexCompact(root, "$.Card.Protection1", data + (14 * 4), 4);
+            JsonSaveBufAsHexCompact(root, "$.Card.Protection2", data + (15 * 4), 4);
+
+            for (size_t i = 0; i < (datalen / 4); i++) {
+                char path[PATH_MAX_LENGTH] = {0};
+                sprintf(path, "$.blocks.%zu", i);
+                JsonSaveBufAsHexCompact(root, path, data + (i * 4), 4);
+            }
+            break;
+        }
+        case jsfEM4x69: {
+            JsonSaveStr(root, "FileType", "EM4469/EM4569");
+            JsonSaveBufAsHexCompact(root, "$.Card.UID", data + (1 * 4), 4);
+            JsonSaveBufAsHexCompact(root, "$.Card.Protection", data + (3 * 4), 4);
+            JsonSaveBufAsHexCompact(root, "$.Card.Config", data + (4 * 4), 4);
+
+            for (size_t i = 0; i < (datalen / 4); i++) {
+                char path[PATH_MAX_LENGTH] = {0};
+                sprintf(path, "$.blocks.%zu", i);
+                JsonSaveBufAsHexCompact(root, path, data + (i * 4), 4);
+            }
+            break;
+        }
+        case jsfEM4x50: {
+            JsonSaveStr(root, "FileType", "EM4X50");
+            JsonSaveBufAsHexCompact(root, "$.Card.Protection", data + (1 * 4), 4);
+            JsonSaveBufAsHexCompact(root, "$.Card.Config", data + (2 * 4), 4);
+            JsonSaveBufAsHexCompact(root, "$.Card.Serial", data + (32 * 4), 4);
+            JsonSaveBufAsHexCompact(root, "$.Card.UID", data + (33 * 4), 4);
+
+            for (size_t i = 0; i < (datalen / 4); i++) {
+                char path[PATH_MAX_LENGTH] = {0};
+                sprintf(path, "$.blocks.%zu", i);
+                JsonSaveBufAsHexCompact(root, path, data + (i * 4), 4);
+            }
+            break;
+        }
         case jsfMfPlusKeys: {
             JsonSaveStr(root, "FileType", "mfp");
             JsonSaveBufAsHexCompact(root, "$.Card.UID", &data[0], 7);
@@ -573,16 +614,16 @@ int saveFileJSONex(const char *preferredName, JSONFileType ftype, uint8_t *data,
     int res = json_dump_file(root, fileName, JSON_INDENT(2));
     if (res) {
         PrintAndLogEx(FAILED, "error: can't save the file: " _YELLOW_("%s"), fileName);
-        json_decref(root);
         retval = 200;
         goto out;
     }
-    if (verbose)
-        PrintAndLogEx(SUCCESS, "saved to json file " _YELLOW_("%s"), fileName);
 
-    json_decref(root);
+    if (verbose) {
+        PrintAndLogEx(SUCCESS, "saved to json file " _YELLOW_("%s"), fileName);
+    }
 
 out:
+    json_decref(root);
     free(fileName);
     return retval;
 }
@@ -693,7 +734,8 @@ int createMfcKeyDump(const char *preferredName, uint8_t sectorsCnt, sector_t *e_
 
     fflush(f);
     fclose(f);
-    PrintAndLogEx(SUCCESS, "Found keys have been dumped to " _YELLOW_("%s")"--> 0xffffffffffff has been inserted for unknown keys.", fileName);
+    PrintAndLogEx(SUCCESS, "Found keys have been dumped to " _YELLOW_("%s"), fileName);
+    PrintAndLogEx(INFO, "FYI! --> " _YELLOW_("0xFFFFFFFFFFFF") " <-- has been inserted for unknown keys where " _YELLOW_("res") " is " _YELLOW_("0"));
     free(fileName);
     return PM3_SUCCESS;
 }
@@ -1091,6 +1133,27 @@ int loadFileJSONex(const char *preferredName, void *data, size_t maxdatalen, siz
     }
 
     if (!strcmp(ctype, "t55x7")) {
+        size_t sptr = 0;
+        for (size_t i = 0; i < (maxdatalen / 4); i++) {
+            if (sptr + 4 > maxdatalen) {
+                retval = PM3_EMALLOC;
+                goto out;
+            }
+
+            char blocks[30] = {0};
+            sprintf(blocks, "$.blocks.%zu", i);
+
+            size_t len = 0;
+            JsonLoadBufAsHex(root, blocks, &udata[sptr], 4, &len);
+            if (!len)
+                break;
+
+            sptr += len;
+        }
+        *datalen = sptr;
+    }
+
+    if (!strcmp(ctype, "EM4X50")) {
         size_t sptr = 0;
         for (size_t i = 0; i < (maxdatalen / 4); i++) {
             if (sptr + 4 > maxdatalen) {

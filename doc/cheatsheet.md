@@ -1,7 +1,7 @@
 <a id="Top"></a>
 # Command Cheat Sheet
 
-|Generic|Low Frequence 125 kHz|High Frequence 13.56 MHz|
+|Generic|Low Frequency 125 kHz|High Frequency 13.56 MHz|
 |---|---|---|
 |[Generic](#Generic)|[T55XX](#T55XX)|[MIFARE](#MIFARE)|
 |[Data](#Data)|[HID Prox](#HID-Prox)|[iCLASS](#iCLASS)|
@@ -46,9 +46,10 @@ Reverse permute iCLASS master key
 ```
 Options
 ---
-r          reverse permuted key
+-r  --reverse      : reverse permuted key
+    --key <bytes>  : input key
 
-pm3 --> hf iclass permute r 3F90EBF0910F7B6F
+pm3 --> hf iclass permute --reverse --key 3F90EBF0910F7B6F
 ```
 
 iCLASS Reader
@@ -61,71 +62,91 @@ Dump iCLASS card contents
 ```
 Options
 ---
-k <key>      : *Access Key as 16 hex symbols or 1 hex to select key from memory
+-f, --file <filename>          filename to save dump to
+-k, --key <hex>                debit key as 16 hex symbols OR NR/MAC for replay
+    --ki <dec>                 debit key index to select key from memory 'hf iclass managekeys'
+    --credit <hex>             credit key as 16 hex symbols
+    --ci <dec>                 credit key index to select key from memory 'hf iclass managekeys'
+    --elite                    elite computations applied to key
+    --raw                      raw, the key is interpreted as raw block 3/4
+    --nr                       replay of NR/MAC
 
-m3 --> hf iclass dump k 0
+pm3 --> hf iclass dump --ki 0
 ```
 
 Read iCLASS Block
 ```
 Options
 ---
-b <block>  : The block number as 2 hex symbols
-k <key>    : Access Key as 16 hex symbols or 1 hex to select key from memory
+-k, --key <hex>                Access key as 16 hex symbols
+-b, --block <dec>              The block number to read as an integer
+    --ki <dec>                 Key index to select key from memory 'hf iclass managekeys'
+    --credit                   key is assumed to be the credit key
+    --elite                    elite computations applied to key
+    --raw                      no computations applied to key (raw)
+    --nr                       replay of NR/MAC
 
-pm3 --> hf iclass rdbl b 7 k 0
+pm3 --> hf iclass rdbl -b 7 --ki 0
 ```
 
 Write to iCLASS Block
 ```
 Options
 ---
-b <block>  : The block number as 2 hex symbols
-d <data>   : Set the Data to write as 16 hex symbols
-k <key>    : Access Key as 16 hex symbols or 1 hex to select key from memory
+-k, --key <hex>                Access key as 16 hex symbols
+-b, --block <dec>              The block number to read as an integer
+-d, --data <hex>               data to write as 16 hex symbols
+    --ki <dec>                 Key index to select key from memory 'hf iclass managekeys'
+    --credit                   key is assumed to be the credit key
+    --elite                    elite computations applied to key
+    --raw                      no computations applied to key (raw)
+    --nr                       replay of NR/MAC
 
-pm3 --> hf iclass wrbl b 07 d 6ce099fe7e614fd0 k 0
+pm3 --> hf iclass wrbl -b 7 -d 6ce099fe7e614fd0 --ki 0
 ```
 
 Print keystore
 ```
 Options
 ---
-p           : print keys loaded into memory
+-p, --print                    Print keys loaded into memory
 
-pm3 --> hf iclass managekeys p
+
+pm3 --> hf iclass managekeys -p
 ```
 
 Add key to keystore [0-7]
 ```
 Options
 ---
-n <keynbr>    : specify the keyNbr to set in memory
-k <key>       : set a key in memory
+-f, --file <filename>          Specify a filename to use with load or save operations
+    --ki <dec>                 Specify key index to set key in memory
 
-pm3 --> hf iclass managekeys n 3 k AFA785A7DAB33378
+pm3 --> hf iclass managekeys --ki 3 -k AFA785A7DAB33378
 ```
 
 Encrypt iCLASS Block
 ```
 Options
 ---
-d <block data>    : 16 bytes hex
-k <transport key> : 16 bytes hex
+-d, --data <hex>               data to encrypt
+-k, --key <hex>                3DES transport key
+-v, --verbose                  verbose output
 
-pm3 --> hf iclass encrypt d 0000000f2aa3dba8
+pm3 --> hf iclass encrypt -d 0000000f2aa3dba8
 ```
 
 Decrypt iCLASS Block / file
 ```
 Options
 ---
-d <encrypted blk> : 16 bytes hex
-f <filename>      : filename of dump
-k <transport key> : 16 bytes hex
+-f, --file <filename>          filename of dumpfile
+-d, --data <hex>               3DES encrypted data
+-k, --key <hex>                3DES transport key
+-v, --verbose                  verbose output
 
-pm3 --> hf iclass decrypt d 2AD4C8211F996871
-pm3 --> hf iclass decrypt f hf-iclass-db883702f8ff12e0.bin
+pm3 --> hf iclass decrypt -d 2AD4C8211F996871
+pm3 --> hf iclass decrypt -f hf-iclass-db883702f8ff12e0.bin
 ```
 
 Load iCLASS dump into memory for simulation
@@ -134,33 +155,36 @@ Options
 ---
 f <filename>     : load iCLASS tag-dump filename
 
-pm3 --> hf iclass eload f hf-iclass-db883702f8ff12e0.bin
+pm3 --> hf iclass eload -f hf-iclass-db883702f8ff12e0.bin
 ```
 
 Clone iCLASS Legacy Sequence
 ```
-pm3 --> hf iclass rdbl b 7 k 0
-pm3 --> hf iclass wrbl b 7 d 6ce099fe7e614fd0 k 0
+pm3 --> hf iclass rdbl -b 7 --ki 0
+pm3 --> hf iclass wrbl -b 7 -d 6ce099fe7e614fd0 --ki 0
 ```
 
 Simulate iCLASS
 ```
 Options
 ---
-0 <CSN>     simulate the given CSN
+-t, --type <int>               Simulation type to use
+    --csn <hex>                Specify CSN as 8 bytes (16 hex symbols) to use with sim type 0
+Types:
+0           simulate the given CSN
 1           simulate default CSN
 2           Runs online part of LOCLASS attack
 3           Full simulation using emulator memory (see 'hf iclass eload')
 4           Runs online part of LOCLASS attack against reader in keyroll mode
 
-pm3 --> hf iclass sim 3
+pm3 --> hf iclass sim -t 3
 ```
 
 Simulate iCLASS Sequence
 ```
-pm3 --> hf iclass dump k 0
-pm3 --> hf iclass eload f hf-iclass-db883702f8ff12e0.bin
-pm3 --> hf iclass sim 3
+pm3 --> hf iclass dump --ki 0
+pm3 --> hf iclass eload -f hf-iclass-db883702f8ff12e0.bin
+pm3 --> hf iclass sim -t 3
 ```
 
 Extract custom iCLASS key (loclass attack)
@@ -169,25 +193,26 @@ Options
 ---
 f <filename>   : specify a filename to clone from
 k <key>        : Access Key as 16 hex symbols or 1 hex to select key from memory
-e              : If 'e' is specified, elite computations applied to key
+--elite        : Elite computations applied to key
 
-pm3 --> hf iclass sim 2
-pm3 --> hf iclass loclass f iclass_mac_attack.bin
-pm3 --> hf iclass managekeys n 7 k <Kcus>
-pm3 --> hf iclass dump k 7 e
+pm3 --> hf iclass sim -t 2
+pm3 --> hf iclass loclass -f iclass_mac_attack.bin
+pm3 --> hf iclass managekeys --ki 7 -k <Kcus>
+pm3 --> hf iclass dump --ki 7 --elite
 ```
 
 Verify custom iCLASS key
 ```
 Options
 ---
-f <filename> : Dictionary file with default iCLASS keys
-u            : CSN
-p            : EPURSE
-m            : macs
-e            : elite
+-f, --file <filename>          Dictionary file with default iclass keys
+    --csn <hex>                Specify CSN as 8 bytes (16 hex symbols)
+    --epurse <hex>             Specify ePurse as 8 bytes (16 hex symbols)
+    --macs <hex>               MACs
+    --raw                      no computations applied to key (raw)
+    --elite                    Elite computations applied to key
 
-pm3 --> hf iclass lookup u 010a0ffff7ff12e0 p feffffffffffffff m 66348979153c41b9 f iclass_default_keys e
+pm3 --> hf iclass lookup --csn 010a0ffff7ff12e0 --epurse feffffffffffffff --macs 66348979153c41b9 -f iclass_default_keys --elite
 ```
 
 ## MIFARE
@@ -323,7 +348,7 @@ pm3 --> script run hf_mf_uidbruteforce -s 0x11223344556677 -e 0x11223344556679 -
 ## Wiegand manipulation
 ^[Top](#top)
 
-List all available weigand formats in client
+List all available wiegand formats in client
 ```
 pm3 --> wiegand list
 ```
@@ -332,23 +357,25 @@ Convert Site & Facility code to Wiegand raw hex
 ```
 Options
 ---
-w <format> o <OEM> f <FC> c <CN> i <issuelevel>
-w            : wiegand format to use
-o            : OEM number / site code
-f            : facility code
-c            : card number
-i            : issue level
+-w <format> --oem <OEM> --fc <FC> --cn <CN> --issue <issuelevel>
 
-pm3 --> wiegand encode 0 56 150
+-w            : wiegand format to use
+--oem        : OEM number / site code
+--fc         : facility code
+--cn         : card number
+--issue      : issue level
+
+pm3 --> wiegand encode -w H10301 --oem 0 --fc 56  --cn 150
 ```
 
 Convert Site & Facility code from Wiegand raw hex to numbers
 ```
 Options
 ---
-p            : ignore parity errors
+-p           : ignore parity errors
+--raw        : raw hex to be decoded
 
-pm3 --> wiegand decode 2006f623ae
+pm3 --> wiegand decode --raw 2006f623ae
 ```
 
 ## HID Prox
@@ -367,26 +394,32 @@ pm3 --> lf hid demod
 Simulate Prox card
 ```
 
-pm3 --> lf hid sim 200670012d
+pm3 --> lf hid sim -r 200670012d
+pm3 --> lf hid sim -w H10301 --fc 10 --cn 1337
 ```
 
 Clone Prox to T5577 card
 ```
-pm3 --> lf hid clone 200670012d
+pm3 --> lf hid clone -r 200670012d
+pm3 --> lf hid clone -w H10301 --fc 10 --cn 1337
 ```
 
 Brute force HID reader
 ```
 Options
 ---
-a <format>        :  26|33|34|35|37|40|44|84
-f <facility-code> :  8-bit value HID facility code
-c <cardnumber>    :  (optional) cardnumber to start with, max 65535
-d <delay>         :  delay betweens attempts in ms. Default 1000ms
-v                 :  verbose logging, show all tries
+-v, --verbose        : verbose logging, show all tries
+-w, --wiegand format : see `wiegand list` for available formats
+-f, --fn dec         : facility code
+-c, --cn dec         : card number to start with
+-i dec               : issue level
+-o, --oem dec        : OEM code
+-d, --delay dec      : delay betweens attempts in ms. Default 1000ms
+--up                 : direction to increment card number. (default is both directions)
+--down               : direction to decrement card number. (default is both directions)
 
-pm3 --> lf hid brute a 26 f 224
-pm3 --> lf hid brute v a 26 f 21 c 200 d 2000
+pm3 --> lf hid brute -w H10301 -f 224
+pm3 --> lf hid brute -v -w H10301 -f 21 -c 200 -d 2000
 ```
 
 ## Indala
@@ -532,12 +565,12 @@ pm3 --> data samples <size>
 
 Save samples to file
 ```
-pm3 --> data save <filename>
+pm3 --> data save -f <filename>
 ```
 
 Load samples from file
 ```
-pm3 --> data load <filename>
+pm3 --> data load -f <filename>
 ```
 
 ## Lua Scripts
@@ -552,7 +585,7 @@ pm3 --> script list
 View lua helptext
 
 ```
-pm3 --> script run  <nameofscript> -h
+pm3 --> script run <nameofscript> -h
 ```
 
 
@@ -583,7 +616,7 @@ Options
 -k <key>        The current six byte key with write access
 -n <key>        The new key that will be written to the card
 -a <access>     The new access bytes that will be written to the card
--x              Execute the commands aswell
+-x              Execute the commands as well
 
 pm3 --> script run hf_mf_format -k FFFFFFFFFFFF -n FFFFFFFFFFFF -x
 ```
@@ -595,15 +628,15 @@ Load default keys into flash memory (RDV4 only)
 ```
 Options
 ---
-o <offset>         : offset in memory
-f <filename>       : file name
-m                  : upload 6 bytes keys (mifare key dictionary)
-i                  : upload 8 bytes keys (iClass key dictionary)
-t                  : upload 4 bytes keys (pwd dictionary)
+-o <offset>         : offset in memory
+-f <filename>       : file name
+--mfc               : upload 6 bytes keys (mifare key dictionary)
+--iclass            : upload 8 bytes keys (iClass key dictionary)
+--t55xx             : upload 4 bytes keys (pwd dictionary)
 
-pm3 --> mem load f mfc_default_keys m
-pm3 --> mem load f t55xx_default_pwds t
-pm3 --> mem load f iclass_default_keys i
+pm3 --> mem load -f mfc_default_keys --mfc
+pm3 --> mem load -f t55xx_default_pwds --t5xx
+pm3 --> mem load -f iclass_default_keys --iclass
 ```
 
 ## Sim Module

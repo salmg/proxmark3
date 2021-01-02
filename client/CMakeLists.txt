@@ -18,6 +18,7 @@
 #    -DANDROID_NATIVE_API_LEVEL=android-19 \
 #    -DSKIPBT=1 -DSKIPPYTHON=1 -DSKIPPTHREAD=1 ..
 
+message(STATUS "CMake ${CMAKE_VERSION}")
 cmake_minimum_required(VERSION 3.10)
 project(proxmark3)
 SET (PM3_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..)
@@ -81,7 +82,7 @@ if (NOT SKIPREADLINE EQUAL 1)
     endif (APPLE)
     if (EMBED_READLINE)
         ExternalProject_Add(ncurses
-            URL                   http://ftp.gnu.org/pub/gnu/ncurses/ncurses-6.0.tar.gz
+            URL                   http://ftp.gnu.org/pub/gnu/ncurses/ncurses-6.1.tar.gz
             PREFIX                deps/ncurses
             DOWNLOAD_DIR          ${CMAKE_CURRENT_SOURCE_DIR}/deps/ncurses
             CONFIGURE_COMMAND     ./configure CC=${CMAKE_C_COMPILER} CXX=${CMAKE_CXX_COMPILER} LD=${CMAKE_C_COMPILER} AR=${CMAKE_AR} RANLIB=${CMAKE_RANLIB} ${CFLAGS_EXTERNAL_LIB} --host=arm --disable-database  --with-fallbacks=ansi-generic,ansi-mini,color_xterm,dtterm,dumb,Eterm,Eterm-256color,Eterm-88color,eterm-color,gnome,gnome-256color,guru,hurd,iTerm.app,konsole,konsole-16color,konsole-256color,konsole-base,konsole-linux,konsole-solaris,konsole-vt100,kterm,kterm-color,linux,linux-16color,linux-basic,mac,mlterm,mlterm-256color,mrxvt,mrxvt-256color,mterm,mterm-ansi,mvterm,nsterm,nsterm-16color,nsterm-256color,pty,putty,putty-256color,putty-vt100,rxvt,rxvt-16color,rxvt-256color,rxvt-88color,rxvt-basic,rxvt-color,screen,screen-16color,screen-256color,simpleterm,st-16color,st-256color,st52,st52-color,stv52,tt,tt52,unknown,vt100,vt102,vte,vte-256color,xterm,xterm-16color,xterm-256color,xterm-88color,xterm-basic,xterm-bold,xterm-color,xterm-utf8,xterm-vt220,xterm-vt52,xterm1,xtermc,xtermm   --enable-termcap --without-ada --without-debug --without-dlsym --without-gpm --without-develop --without-tests --without-cxx-binding --with-termlib
@@ -93,7 +94,7 @@ if (NOT SKIPREADLINE EQUAL 1)
         ExternalProject_Add_StepTargets(ncurses configure build install)
 
         ExternalProject_Add(readline
-            URL                   ftp://ftp.gnu.org/gnu/readline/readline-7.0.tar.gz
+            URL                   ftp://ftp.gnu.org/gnu/readline/readline-8.1.tar.gz
             PREFIX                deps/readline
             DOWNLOAD_DIR          ${CMAKE_CURRENT_SOURCE_DIR}/deps/readline
             CONFIGURE_COMMAND     ./configure CC=${CMAKE_C_COMPILER} CXX=${CMAKE_CXX_COMPILER} LD=${CMAKE_C_COMPILER} AR=${CMAKE_AR} RANLIB=${CMAKE_RANLIB} ${CFLAGS_EXTERNAL_LIB} --host=arm --enable-static
@@ -187,7 +188,6 @@ set (TARGET_SOURCES
         ${PM3_ROOT}/client/src/emv/crypto.c
         ${PM3_ROOT}/client/src/emv/crypto_polarssl.c
         ${PM3_ROOT}/client/src/emv/dol.c
-        ${PM3_ROOT}/client/src/emv/dump.c
         ${PM3_ROOT}/client/src/emv/emv_pk.c
         ${PM3_ROOT}/client/src/emv/emv_pki.c
         ${PM3_ROOT}/client/src/emv/emv_pki_priv.c
@@ -215,6 +215,7 @@ set (TARGET_SOURCES
         ${PM3_ROOT}/client/src/uart/uart_posix.c
         ${PM3_ROOT}/client/src/uart/uart_win32.c
         ${PM3_ROOT}/client/src/ui/overlays.ui
+        ${PM3_ROOT}/client/src/aiddesfire.c
         ${PM3_ROOT}/client/src/aidsearch.c
         ${PM3_ROOT}/client/src/cmdanalyse.c
         ${PM3_ROOT}/client/src/cmdcrc.c
@@ -227,6 +228,7 @@ set (TARGET_SOURCES
         ${PM3_ROOT}/client/src/cmdhf15.c
         ${PM3_ROOT}/client/src/cmdhfcryptorf.c
         ${PM3_ROOT}/client/src/cmdhfepa.c
+        ${PM3_ROOT}/client/src/cmdhfemrtd.c
         ${PM3_ROOT}/client/src/cmdhffelica.c
         ${PM3_ROOT}/client/src/cmdhffido.c
         ${PM3_ROOT}/client/src/cmdhficlass.c
@@ -246,13 +248,18 @@ set (TARGET_SOURCES
         ${PM3_ROOT}/client/src/cmdlf.c
         ${PM3_ROOT}/client/src/cmdlfawid.c
         ${PM3_ROOT}/client/src/cmdlfcotag.c
-        ${PM3_ROOT}/client/src/cmdlfem4x.c
+        ${PM3_ROOT}/client/src/cmdlfdestron.c
+        ${PM3_ROOT}/client/src/cmdlfem.c
+        ${PM3_ROOT}/client/src/cmdlfem410x.c
+        ${PM3_ROOT}/client/src/cmdlfem4x05.c
         ${PM3_ROOT}/client/src/cmdlfem4x50.c
-        ${PM3_ROOT}/client/src/cmdlffdx.c
+        ${PM3_ROOT}/client/src/cmdlfem4x70.c
+        ${PM3_ROOT}/client/src/cmdlffdxb.c
         ${PM3_ROOT}/client/src/cmdlfgallagher.c
         ${PM3_ROOT}/client/src/cmdlfguard.c
         ${PM3_ROOT}/client/src/cmdlfhid.c
         ${PM3_ROOT}/client/src/cmdlfhitag.c
+        ${PM3_ROOT}/client/src/cmdlfidteck.c
         ${PM3_ROOT}/client/src/cmdlfindala.c
         ${PM3_ROOT}/client/src/cmdlfio.c
         ${PM3_ROOT}/client/src/cmdlfjablotron.c
@@ -284,6 +291,7 @@ set (TARGET_SOURCES
         ${PM3_ROOT}/client/src/graph.c
         ${PM3_ROOT}/client/src/jansson_path.c
         ${PM3_ROOT}/client/src/preferences.c
+        ${PM3_ROOT}/client/src/pm3.c
         ${PM3_ROOT}/client/src/pm3_binlib.c
         ${PM3_ROOT}/client/src/pm3_bitlib.c
         ${PM3_ROOT}/client/src/prng.c
@@ -356,7 +364,7 @@ if (NOT SKIPPYTHON EQUAL 1)
         add_definitions(-DHAVE_PYTHON)
         set(ADDITIONAL_DIRS ${PYTHON3_INCLUDE_DIRS} ${ADDITIONAL_DIRS})
         set(ADDITIONAL_LNK ${PYTHON3_LIBRARIES} ${ADDITIONAL_LNK})
-        set(ADDITIONAL_LNKDIRS ${PYTHON3_LIBRARY_DIRS} ${ADDITIONAL_LNKDIRS})   
+        set(ADDITIONAL_LNKDIRS ${PYTHON3_LIBRARY_DIRS} ${ADDITIONAL_LNKDIRS})
     endif (PYTHON3EMBED_FOUND)
 endif (NOT SKIPPYTHON EQUAL 1)
 
@@ -420,7 +428,7 @@ if (SKIPPYTHON EQUAL 1)
 else (SKIPPYTHON EQUAL 1)
     if (PYTHON3EMBED_FOUND)
         message(STATUS "Python3 library:   Python3 embed found, enabled")
-    elseif (PYTHON_FOUND)
+    elseif (PYTHON3_FOUND)
         message(STATUS "Python3 library:   Python3 found, enabled")
     else (PYTHON3EMBED_FOUND)
         message(STATUS "Python3 library:   Python3 not found, disabled")
@@ -450,6 +458,28 @@ else (SKIPWHEREAMISYSTEM EQUAL 1)
         message(STATUS "Whereami library:  system library not found, using local library")
     endif (WHEREAMI_FOUND)
 endif (SKIPWHEREAMISYSTEM EQUAL 1)
+
+# Lua SWIG
+if (EXISTS ${PM3_ROOT}/client/src/pm3_luawrap.c)
+    set (TARGET_SOURCES
+            ${PM3_ROOT}/client/src/pm3_luawrap.c
+            ${TARGET_SOURCES})
+    add_definitions(-DHAVE_LUA_SWIG)
+    message(STATUS "Lua SWIG:          wrapper found")
+endif (EXISTS ${PM3_ROOT}/client/src/pm3_luawrap.c)
+
+# Python SWIG
+if (NOT SKIPPYTHON EQUAL 1)
+    if (PYTHON3EMBED_FOUND OR PYTHON3_FOUND)
+        if (EXISTS ${PM3_ROOT}/client/src/pm3_pywrap.c)
+            set (TARGET_SOURCES
+                    ${PM3_ROOT}/client/src/pm3_pywrap.c
+                    ${TARGET_SOURCES})
+            add_definitions(-DHAVE_PYTHON_SWIG)
+            message(STATUS "Python SWIG:       wrapper found")
+        endif (EXISTS ${PM3_ROOT}/client/src/pm3_pywrap.c)
+    endif (PYTHON3EMBED_FOUND OR PYTHON3_FOUND)
+endif (NOT SKIPPYTHON EQUAL 1)
 message(STATUS "===================================================================")
 
 add_executable(proxmark3
@@ -493,20 +523,10 @@ if (NOT APPLE)
     set(ADDITIONAL_LNK ${ADDITIONAL_LNK} -Wl,--as-needed -latomic -Wl,--no-as-needed)
 endif (NOT APPLE)
 
-
-find_library(pm3rrg_rdv4_cliparser REQUIRED)
-find_library(pm3rrg_rdv4_tinycbor REQUIRED)
-find_library(pm3rrg_rdv4_lua REQUIRED)
-find_library(pm3rrg_rdv4_mbedtls REQUIRED)
-find_library(pm3rrg_rdv4_reveng REQUIRED)
-find_library(pm3rrg_rdv4_hardnested REQUIRED)
-
 if (NOT JANSSON_FOUND)
-    find_library(pm3rrg_rdv4_jansson REQUIRED)
     set(ADDITIONAL_LNK pm3rrg_rdv4_jansson ${ADDITIONAL_LNK})
 endif (NOT JANSSON_FOUND)
 if (NOT WHEREAMI_FOUND)
-    find_library(pm3rrg_rdv4_whereami REQUIRED)
     set(ADDITIONAL_LNK pm3rrg_rdv4_whereami ${ADDITIONAL_LNK})
 endif (NOT WHEREAMI_FOUND)
 

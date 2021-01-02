@@ -169,9 +169,13 @@ help:
 	@echo "+ fpga_compress   - Make tools/fpga_compress"
 	@echo
 	@echo "+ style           - Apply some automated source code formatting rules"
+	@echo "+ cliparser       - Generate cliparser TODO"
 	@echo "+ check           - Run offline tests. Set CHECKARGS to pass arguments to the test script"
 	@echo "+ .../check       - Run offline tests against specific target. See above."
 	@echo "+ miscchecks      - Detect various encoding issues in source code"
+	@echo
+	@echo "+ udev            - Sets udev rules on *nix"
+	@echo "+ accessrights    - Ensure user belongs to correct group on *nix"
 	@echo
 	@echo "Possible platforms: try \"make PLATFORM=\" for more info, default is PM3RDV4"
 	@echo "To activate verbose mode, use make V=1"
@@ -245,10 +249,18 @@ endif
 # easy printing of MAKE VARIABLES
 print-%: ; @echo $* = $($*)
 
+cliparser:
+	# Get list of all commands
+	cat doc/commands.md | grep -e ^\|\` | cut -f 2 -d "\`" | grep -v 'help\|list\|mem spiffs\|quit\|exit' | awk '{$$1=$$1};1' > cliparser_all_commands.tmp
+	# Get list of cliparserized commands
+	grep -r CLIParserInit ./client/src/ | cut -f 2 -d "\"" | awk '{$$1=$$1};1' > cliparser_done.tmp
+	# Determine commands that still need cliparser conversion
+	grep -xvf cliparser_done.tmp cliparser_all_commands.tmp > ./doc/cliparser_todo.txt
+
 style:
 	# Make sure astyle is installed
 	@which astyle >/dev/null || ( echo "Please install 'astyle' package first" ; exit 1 )
-	# Remove spaces & tabs at EOL, add LF at EOF if needed on *.c, *.h, *.cpp. *.lua, *.py, *.pl, Makefile
+	# Remove spaces & tabs at EOL, add LF at EOF if needed on *.c, *.h, *.cpp. *.lua, *.py, *.pl, Makefile, *.v
 	find . \( -not -path "./cov-int/*" -and -not -path "./fpga/xst/*" -and \( -name "*.[ch]" -or \( -name "*.cpp" -and -not -name "*.moc.cpp" \) -or -name "*.lua" -or -name "*.py" -or -name "*.pl" -or -name "Makefile" -or -name "*.v" \) \) \
 	    -exec perl -pi -e 's/[ \t]+$$//' {} \; \
 	    -exec sh -c "tail -c1 {} | xxd -p | tail -1 | grep -q -v 0a$$" \; \
@@ -259,23 +271,32 @@ style:
 	    --keep-one-line-blocks --max-instatement-indent=60 \
 	    --style=google --pad-oper --unpad-paren --pad-header \
 	    --align-pointer=name {} \;
+	# Update commands.md
+	[ -x client/proxmark3 ] && client/proxmark3 -m > doc/commands.md
 
 # Detecting weird codepages and tabs.
+ifeq ($(platform),Darwin)
+miscchecks: TABSCMD=egrep -l  '\t' {}
+else
+miscchecks: TABSCMD=grep -lP '\t' {}
+endif
+ifneq (,$(EDIT))
+miscchecks: TABSCMD+= && vi {} -c ':set tabstop=4' -c ':set et|retab' -c ':wq'
+endif
 miscchecks:
-	# Make sure recode is installed
+# Make sure recode is installed
 	@which recode >/dev/null || ( echo "Please install 'recode' package first" ; exit 1 )
 	@echo "Files with suspicious chars:"
-	@find . \( -name "*.[ch]" -or -name "*.cpp" -or -name "*.lua" -or -name "*.py" -or -name "*.pl" -or -name "Makefile" -or -name "*.v" \) \
+	@find . \( -not -path "./cov-int/*" -and -not -path "./client/deps/*" -and \( -name "*.[ch]" -or -name "*.cpp" -or -name "*.lua" -or -name "*.py" -or -name "*.pl" -or -name "Makefile" -or -name "*.v" \) \) \
 	      -exec sh -c "cat {} |recode utf8.. >/dev/null || echo {}" \;
-	@echo "Files with tabs:"
-# to remove tabs within lines, one can try with: vi $file -c ':set tabstop=4' -c ':set et|retab' -c ':wq'
-ifeq ($(platform),Darwin)
-	@find . \( -name "*.[ch]" -or \( -name "*.cpp" -and -not -name "*.moc.cpp" \) -or -name "*.lua" -or -name "*.py" -or -name "*.pl" -or -name "*.md" -or -name "*.txt" -or -name "*.awk" -or -name "*.v" \) \
-	      -exec egrep -l '\t' {} \;
+ifneq (,$(EDIT))
+	@echo "Files with tabs: (EDIT enabled, files will be rewritten!)"
 else
-	@find . \( -name "*.[ch]" -or \( -name "*.cpp" -and -not -name "*.moc.cpp" \) -or -name "*.lua" -or -name "*.py" -or -name "*.pl" -or -name "*.md" -or -name "*.txt" -or -name "*.awk" -or -name "*.v" \) \
-	      -exec grep -lP '\t' {} \;
+	@echo "Files with tabs: (rerun with EDIT=1 if you want to convert them with vim)"
 endif
+# to remove tabs within lines, one can try with: vi $file -c ':set tabstop=4' -c ':set et|retab' -c ':wq'
+	@find . \( -not -path "./cov-int/*" -and -not -path "./client/deps/*" -and \( -name "*.[ch]" -or \( -name "*.cpp" -and -not -name "*.moc.cpp" \) -or -name "*.lua" -or -name "*.py" -or -name "*.pl" -or -name "*.md" -or -name "*.txt" -or -name "*.awk" -or -name "*.v" \) \) \
+	      -exec sh -c "$(TABSCMD)" \;
 #	@echo "Files with printf \\\\t:"
 #	@find . \( -name "*.[ch]" -or \( -name "*.cpp" -and -not -name "*.moc.cpp" \) -or -name "*.lua" -or -name "*.py" -or -name "*.pl" -or -name "*.md" -or -name "*.txt" -or -name "*.awk" -or -name "*.v" \) \
 #	      -exec grep -lP '\\t' {} \;

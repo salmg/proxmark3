@@ -45,6 +45,23 @@ PLATFORM_EXTRAS=BTADDON
 Default standalone mode is $(DEFAULT_STANDALONE).
 To disable standalone modes, set explicitly an empty STANDALONE:
 STANDALONE=
+
+For Proxmarks with only 256k, you can define
+PLATFORM_SIZE=256
+to be warned if the image is too big for your device
+and you can specify which parts to skip in order to reduce the size:
+SKIP_LF=1
+SKIP_HITAG=1
+SKIP_EM4x50=1
+SKIP_ISO15693=1
+SKIP_LEGICRF=1
+SKIP_ISO14443b=1
+SKIP_ISO14443a=1
+SKIP_ICLASS=1
+SKIP_FELICA=1
+SKIP_NFCBARCODE=1
+SKIP_HFSNIFF=1
+SKIP_HFPLOT=1
 endef
 
 define KNOWN_DEFINITIONS
@@ -79,35 +96,65 @@ ifneq (,$(PLATFORM_EXTRAS_TMP))
 endif
 
 # common LF support
-PLATFORM_DEFS += \
-    -DWITH_LF \
-    -DWITH_HITAG \
-    -DWITH_EM4x50
+ifneq ($(SKIP_LF),1)
+    PLATFORM_DEFS += -DWITH_LF
+endif
+ifneq ($(SKIP_HITAG),1)
+    PLATFORM_DEFS += -DWITH_HITAG
+endif
+ifneq ($(SKIP_EM4x50),1)
+    PLATFORM_DEFS += -DWITH_EM4x50
+endif
+ifneq ($(SKIP_EM4x70),1)
+    PLATFORM_DEFS += -DWITH_EM4x70
+endif
 
 # common HF support
-PLATFORM_DEFS += \
-    -DWITH_ISO15693 \
-    -DWITH_LEGICRF \
-    -DWITH_ISO14443b \
-    -DWITH_ISO14443a \
-    -DWITH_ICLASS \
-    -DWITH_FELICA \
-    -DWITH_NFCBARCODE \
-    -DWITH_HFSNIFF \
-    -DWITH_HFPLOT
-
+ifneq ($(SKIP_ISO15693),1)
+    PLATFORM_DEFS += -DWITH_ISO15693
+endif
+ifneq ($(SKIP_LEGICRF),1)
+    PLATFORM_DEFS += -DWITH_LEGICRF
+endif
+ifneq ($(SKIP_ISO14443b),1)
+    PLATFORM_DEFS += -DWITH_ISO14443b
+endif
+ifneq ($(SKIP_ISO14443a),1)
+    PLATFORM_DEFS += -DWITH_ISO14443a
+endif
+ifneq ($(SKIP_ICLASS),1)
+    PLATFORM_DEFS += -DWITH_ICLASS
+endif
+ifneq ($(SKIP_FELICA),1)
+    PLATFORM_DEFS += -DWITH_FELICA
+endif
+ifneq ($(SKIP_NFCBARCODE),1)
+    PLATFORM_DEFS += -DWITH_NFCBARCODE
+endif
+ifneq ($(SKIP_HFSNIFF),1)
+    PLATFORM_DEFS += -DWITH_HFSNIFF
+endif
+ifneq ($(SKIP_HFPLOT),1)
+    PLATFORM_DEFS += -DWITH_HFPLOT
+endif
+ifeq ($(SKIP_COMPRESSION),1)
+    PLATFORM_DEFS += -DWITH_NO_COMPRESSION
+endif
 
 # Standalone mode
 ifneq ($(strip $(filter $(PLATFORM_DEFS),$(STANDALONE_REQ_DEFS))),$(strip $(STANDALONE_REQ_DEFS)))
     $(error Chosen Standalone mode $(STANDALONE) requires $(strip $(STANDALONE_REQ_DEFS)), unsupported by $(PLTNAME))
 endif
-PLATFORM_DEFS+=$(STANDALONE_PLATFORM_DEFS)
+ifneq (,$(STANDALONE_PLATFORM_DEFS))
+    PLATFORM_DEFS+=$(STANDALONE_PLATFORM_DEFS)
+endif
 
 $(info $(findstring WITH_STANDALONE_*,$(PLATFORM_DEFS)))
 
-# Misc
-#PLATFORM_DEFS += -DWITH_LCD
-
+# Misc (LCD support)
+ifneq (,$(findstring WITH_LCD,$(PLATFORM_DEFS)))
+    #PLATFORM_DEFS += -DWITH_LCD
+endif
 
 # Add flags dependencies :
 
@@ -135,6 +182,10 @@ ifeq (,$(PLATFORM_DEFS_INFO_STANDALONE))
     PLATFORM_DEFS_INFO_STANDALONE = No standalone mode selected
 endif
 
+ifeq ($(PLATFORM_SIZE),)
+    PLATFORM_SIZE=512
+endif
+
 PLATFORM_CHANGED=false
 ifneq ($(PLATFORM), $(CACHED_PLATFORM))
     PLATFORM_CHANGED=true
@@ -147,6 +198,7 @@ endif
 export PLATFORM
 export PLATFORM_EXTRAS
 export PLATFORM_EXTRAS_INFO
+export PLATFORM_SIZE
 export PLTNAME
 export PLATFORM_DEFS
 export PLATFORM_DEFS_INFO
@@ -156,6 +208,7 @@ export PLATFORM_CHANGED
 $(info ===================================================================)
 $(info Platform name:     $(PLTNAME))
 $(info PLATFORM:          $(PLATFORM))
+$(info PLATFORM_SIZE:     $(PLATFORM_SIZE))
 $(info Platform extras:   $(PLATFORM_EXTRAS_INFO))
 $(info Included options:  $(PLATFORM_DEFS_INFO))
 $(info Standalone mode:   $(PLATFORM_DEFS_INFO_STANDALONE))

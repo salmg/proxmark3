@@ -14,13 +14,16 @@
 #if !defined(_WIN32)
 #define _POSIX_C_SOURCE 200112L
 #endif
-
 #include "ui.h"
 #include "commonutil.h"  // ARRAYLEN
 
 #include <stdio.h> // for Mingw readline
 #include <stdarg.h>
 #include <stdlib.h>
+
+#ifdef HAVE_READLINE
+#include <readline/readline.h>
+#endif
 
 #include <complex.h>
 #include "util.h"
@@ -38,11 +41,12 @@
 session_arg_t session;
 
 double CursorScaleFactor = 1;
-int PlotGridX = 0, PlotGridY = 0, PlotGridXdefault = 64, PlotGridYdefault = 64;
+char CursorScaleFactorUnit[11] = {0};
+double PlotGridX = 0, PlotGridY = 0, PlotGridXdefault = 64, PlotGridYdefault = 64;
 uint32_t CursorCPos = 0, CursorDPos = 0;
 double GraphPixelsPerPoint = 1.f; // How many visual pixels are between each sample point (x axis)
 static bool flushAfterWrite = 0;
-int GridOffset = 0;
+double GridOffset = 0;
 bool GridLocked = false;
 bool showDemod = true;
 
@@ -304,6 +308,9 @@ static void fPrintAndLog(FILE *stream, const char *fmt, ...) {
     pthread_mutex_lock(&print_lock);
     bool linefeed = true;
 
+    if (logging && session.incognito) {
+        logging = 0;
+    }
     if ((g_printAndLog & PRINTANDLOG_LOG) && logging && !logfile) {
         char *my_logfile_path = NULL;
         char filename[40];
@@ -355,7 +362,7 @@ static void fPrintAndLog(FILE *stream, const char *fmt, ...) {
     va_start(argptr, fmt);
     vsnprintf(buffer, sizeof(buffer), fmt, argptr);
     va_end(argptr);
-    if (buffer[strlen(buffer) - 1] == NOLF[0]) {
+    if (strlen(buffer) > 0 && buffer[strlen(buffer) - 1] == NOLF[0]) {
         linefeed = false;
         buffer[strlen(buffer) - 1] = 0;
     }
@@ -620,4 +627,100 @@ void iceSimple_Filter(int *data, const size_t len, uint8_t k) {
     }
 }
 
+void print_progress(size_t count, uint64_t max, barMode_t style) {
+    int cols = 100 + 35;
+#ifdef HAVE_READLINE
+    static int prev_cols = 0;
+    int rows;
+    rl_reset_screen_size(); // refresh Readline idea of the actual screen width
+    rl_get_screen_size(&rows, &cols);
+    (void) rows;
+    if (prev_cols > cols) {
+        PrintAndLogEx(NORMAL, _CLEAR_ _TOP_ "");
+    }
+    prev_cols = cols;
+#endif
+    int width = cols - 35;
+#define PERCENTAGE(V, T)   ((V * width) / T)
+    // x/8 fractional part of the percentage
+#define PERCENTAGEFRAC(V, T)   ((int)(((((float)V * width) / T) - ((V * width) / T)) * 8))
 
+    const char *smoothtable[] = {
+        "\xe2\x80\x80",
+        "\xe2\x96\x8F",
+        "\xe2\x96\x8E",
+        "\xe2\x96\x8D",
+        "\xe2\x96\x8C",
+        "\xe2\x96\x8B",
+        "\xe2\x96\x8A",
+        "\xe2\x96\x89",
+        "\xe2\x96\x88",
+    };
+
+    uint8_t mode = (session.emoji_mode == EMOJI);
+
+    const char *block[] = {"#", "\xe2\x96\x88"};
+    // use a 3-byte space in emoji mode to ease computations
+    const char *space[] = {" ", "\xe2\x80\x80"};
+    uint8_t unit = strlen(block[mode]);
+    // +1 for \0
+    char *bar = calloc(unit * width + 1, sizeof(uint8_t));
+
+    uint8_t value = PERCENTAGE(count, max);
+
+    int i = 0;
+    // prefix is added already.
+    for (; i < unit * value; i += unit) {
+        memcpy(bar + i, block[mode], unit);
+    }
+    // add last block
+    if (mode == 1) {
+        memcpy(bar + i, smoothtable[PERCENTAGEFRAC(count, max)], unit);
+    } else {
+        memcpy(bar + i, space[mode], unit);
+    }
+    i += unit;
+    // add spaces
+    for (; i < unit * width; i += unit) {
+        memcpy(bar + i, space[mode], unit);
+    }
+    // color buffer
+    size_t collen = strlen(bar) + 40;
+    char *cbar = calloc(collen, sizeof(uint8_t));
+
+    // Add colors
+    if (session.supports_colors) {
+        int p60 = unit * (width * 60 / 100);
+        int p20 = unit * (width * 20 / 100);
+        snprintf(cbar,  collen,  _GREEN_("%.*s"), p60, bar);
+        snprintf(cbar + strlen(cbar), collen - strlen(cbar), _CYAN_("%.*s"), p20,  bar + p60);
+        snprintf(cbar + strlen(cbar), collen - strlen(cbar), _YELLOW_("%.*s"), unit * width - p60 - p20, bar + p60 + p20);
+    } else {
+        snprintf(cbar,  collen,  "%s", bar);
+    }
+
+    size_t len = strlen(cbar) + 32;
+    char *buffer = calloc(len, sizeof(uint8_t));
+
+    switch (style) {
+        case STYLE_BAR: {
+            sprintf(buffer, "%s", cbar);
+            printf("\b%c[2K\r[" _YELLOW_("=")"] %s", 27, buffer);
+            break;
+        }
+        case STYLE_MIXED: {
+            sprintf(buffer, "%s [ %zu mV / %2u V / %2u Vmax ]", cbar, count, (uint32_t)(count / 1000), (uint32_t)(max / 1000));
+            printf("\b%c[2K\r[" _YELLOW_("=")"] %s ", 27, buffer);
+            break;
+        }
+        case STYLE_VALUE: {
+            printf("[" _YELLOW_("=")"] %zu mV / %2u V / %2u Vmax\r", count, (uint32_t)(count / 1000), (uint32_t)(max / 1000));
+            break;
+        }
+    }
+
+    fflush(stdout);
+    free(buffer);
+    free(bar);
+    free(cbar);
+}

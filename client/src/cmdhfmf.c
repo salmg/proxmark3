@@ -16,15 +16,17 @@
 #include "comms.h"        // clearCommandBuffer
 #include "fileutils.h"
 #include "cmdtrace.h"
-#include "emv/dump.h"
 #include "mifare/mifaredefault.h"          // mifare default key array
-#include "cliparser.h"           // argtable
+#include "cliparser.h"          // argtable
 #include "hardnested_bf_core.h" // SetSIMDInstr
 #include "mifare/mad.h"
 #include "mifare/ndef.h"
 #include "protocols.h"
-#include "util_posix.h"  // msclock
+#include "util_posix.h"         // msclock
 #include "cmdhfmfhard.h"
+#include "des.h"                // des ecb
+#include "crapto1/crapto1.h"    // prng_successor
+#include "cmdhf14a.h"           // exchange APDU
 
 #define MFBLOCK_SIZE 16
 
@@ -627,6 +629,74 @@ static void decode_print_st(uint16_t blockno, uint8_t *data) {
     }
 }
 
+static uint16_t NumOfBlocks(char card) {
+    switch (card) {
+        case '0' :
+            return MIFARE_MINI_MAXBLOCK;
+        case '1' :
+            return MIFARE_1K_MAXBLOCK;
+        case '2' :
+            return MIFARE_2K_MAXBLOCK;
+        case '4' :
+            return MIFARE_4K_MAXBLOCK;
+        default  :
+            return 0;
+    }
+}
+
+static uint8_t NumOfSectors(char card) {
+    switch (card) {
+        case '0' :
+            return MIFARE_MINI_MAXSECTOR;
+        case '1' :
+            return MIFARE_1K_MAXSECTOR;
+        case '2' :
+            return MIFARE_2K_MAXSECTOR;
+        case '4' :
+            return MIFARE_4K_MAXSECTOR;
+        default  :
+            return 0;
+    }
+}
+
+static uint8_t FirstBlockOfSector(uint8_t sectorNo) {
+    if (sectorNo < 32) {
+        return sectorNo * 4;
+    } else {
+        return 32 * 4 + (sectorNo - 32) * 16;
+    }
+}
+
+static uint8_t NumBlocksPerSector(uint8_t sectorNo) {
+    if (sectorNo < 32) {
+        return 4;
+    } else {
+        return 16;
+    }
+}
+
+static uint8_t GetSectorFromBlockNo(uint8_t blockNo) {
+    if (blockNo < 128)
+        return blockNo / 4;
+    else
+        return 32 + ((128 - blockNo) / 16);
+}
+
+static char GetFormatFromSector(uint8_t sectorNo) {
+    switch (sectorNo) {
+        case MIFARE_MINI_MAXSECTOR:
+            return '0';
+        case MIFARE_1K_MAXSECTOR:
+            return '1';
+        case MIFARE_2K_MAXSECTOR:
+            return '2';
+        case MIFARE_4K_MAXSECTOR:
+            return '4';
+        default  :
+            return ' ';
+    }
+}
+
 static int CmdHF14AMfDarkside(const char *Cmd) {
     uint8_t blockno = 0, key_type = MIFARE_AUTH_KEYA;
     uint64_t key = 0;
@@ -825,12 +895,9 @@ static int CmdHF14AMfRdSc(const char *Cmd) {
         PrintAndLogEx(NORMAL, "isOk:%02x", isOK);
         if (isOK) {
 
-            uint8_t blocks = 4;
-            uint8_t start = sectorNo * 4;
-            if (sectorNo > 32) {
-                blocks = 16;
-                start = 128 + (sectorNo - 32) * 16;
-            }
+            uint8_t blocks = NumBlocksPerSector(sectorNo);
+            uint8_t start = FirstBlockOfSector(sectorNo);
+
             for (int i = 0; i < blocks; i++) {
                 PrintAndLogEx(NORMAL, "%3d | %s", start + i, sprint_hex(data + (i * 16), 16));
             }
@@ -841,74 +908,6 @@ static int CmdHF14AMfRdSc(const char *Cmd) {
     }
 
     return PM3_SUCCESS;
-}
-
-static uint16_t NumOfBlocks(char card) {
-    switch (card) {
-        case '0' :
-            return MIFARE_MINI_MAXBLOCK;
-        case '1' :
-            return MIFARE_1K_MAXBLOCK;
-        case '2' :
-            return MIFARE_2K_MAXBLOCK;
-        case '4' :
-            return MIFARE_4K_MAXBLOCK;
-        default  :
-            return 0;
-    }
-}
-
-static uint8_t NumOfSectors(char card) {
-    switch (card) {
-        case '0' :
-            return MIFARE_MINI_MAXSECTOR;
-        case '1' :
-            return MIFARE_1K_MAXSECTOR;
-        case '2' :
-            return MIFARE_2K_MAXSECTOR;
-        case '4' :
-            return MIFARE_4K_MAXSECTOR;
-        default  :
-            return 0;
-    }
-}
-
-static uint8_t FirstBlockOfSector(uint8_t sectorNo) {
-    if (sectorNo < 32) {
-        return sectorNo * 4;
-    } else {
-        return 32 * 4 + (sectorNo - 32) * 16;
-    }
-}
-
-static uint8_t NumBlocksPerSector(uint8_t sectorNo) {
-    if (sectorNo < 32) {
-        return 4;
-    } else {
-        return 16;
-    }
-}
-
-static uint8_t GetSectorFromBlockNo(uint8_t blockNo) {
-    if (blockNo < 128)
-        return blockNo / 4;
-    else
-        return 32 + ((128 - blockNo) / 16);
-}
-
-static char GetFormatFromSector(uint8_t sectorNo) {
-    switch (sectorNo) {
-        case MIFARE_MINI_MAXSECTOR:
-            return '0';
-        case MIFARE_1K_MAXSECTOR:
-            return '1';
-        case MIFARE_2K_MAXSECTOR:
-            return '2';
-        case MIFARE_4K_MAXSECTOR:
-            return '4';
-        default  :
-            return ' ';
-    }
 }
 
 static int FastDumpWithEcFill(uint8_t numsectors) {
@@ -1002,6 +1001,7 @@ static int CmdHF14AMfDump(const char *Cmd) {
             return PM3_ESOFT;
 
         strcpy(keyFilename, fptr);
+        free(fptr);
     }
 
     if ((f = fopen(keyFilename, "rb")) == NULL) {
@@ -1163,6 +1163,7 @@ static int CmdHF14AMfDump(const char *Cmd) {
             return PM3_ESOFT;
 
         strcpy(dataFilename, fptr);
+        free(fptr);
     }
 
     uint16_t bytes = 16 * (FirstBlockOfSector(numSectors - 1) + NumBlocksPerSector(numSectors - 1));
@@ -1226,6 +1227,7 @@ static int CmdHF14AMfRestore(const char *Cmd) {
             return 1;
 
         strcpy(keyFilename, fptr);
+        free(fptr);
     }
 
     if ((fkeys = fopen(keyFilename, "rb")) == NULL) {
@@ -1260,6 +1262,7 @@ static int CmdHF14AMfRestore(const char *Cmd) {
             return 1;
 
         strcpy(dataFilename, fptr);
+        free(fptr);
     }
 
     if ((fdump = fopen(dataFilename, "rb")) == NULL) {
@@ -1570,8 +1573,10 @@ jumptoend:
             if (createMfcKeyDump(fptr, SectorsCnt, e_sector) != PM3_SUCCESS) {
                 PrintAndLogEx(ERR, "Failed to save keys to file");
                 free(e_sector);
+                free(fptr);
                 return PM3_ESOFT;
             }
+            free(fptr);
         }
         free(e_sector);
     }
@@ -1775,8 +1780,10 @@ jumptoend:
         if (createMfcKeyDump(fptr, SectorsCnt, e_sector) != PM3_SUCCESS) {
             PrintAndLogEx(ERR, "Failed to save keys to file");
             free(e_sector);
+            free(fptr);
             return PM3_ESOFT;
         }
+        free(fptr);
     }
     free(e_sector);
 
@@ -2007,13 +2014,12 @@ static int CmdHF14AMfAutoPWN(const char *Cmd) {
     char ctmp;
     // Nested and Hardnested returned status
     uint64_t foundkey = 0;
-    int16_t isOK = 0;
+    int isOK = 0;
     int current_sector_i = 0, current_key_type_i = 0;
     // Dumping and transfere to simulater memory
     uint8_t block[16] = {0x00};
     uint8_t *dump;
     int bytes;
-    char *fnameptr = filename;
     // Settings
     bool slow = false;
     bool legacy_mfchk = false;
@@ -2136,7 +2142,6 @@ static int CmdHF14AMfAutoPWN(const char *Cmd) {
     // read uid to generate a filename for the key file
     char *fptr = GenerateFilename("hf-mf-", "-key.bin");
 
-
     // check if tag doesn't have static nonce
     has_staticnonce = detect_classic_static_nonce();
 
@@ -2146,6 +2151,7 @@ static int CmdHF14AMfAutoPWN(const char *Cmd) {
         if (prng_type < 0) {
             PrintAndLogEx(FAILED, "\nNo tag detected or other tag communication error");
             free(e_sector);
+            free(fptr);
             return prng_type;
         }
     }
@@ -2259,6 +2265,7 @@ static int CmdHF14AMfAutoPWN(const char *Cmd) {
         keyBlock = calloc(ARRAYLEN(g_mifare_default_keys), 6);
         if (keyBlock == NULL) {
             free(e_sector);
+            free(fptr);
             return PM3_EMALLOC;
         }
 
@@ -2365,8 +2372,7 @@ static int CmdHF14AMfAutoPWN(const char *Cmd) {
             if (verbose) {
                 PrintAndLogEx(INFO, "======================= " _YELLOW_("START DARKSIDE ATTACK") " =======================");
             }
-
-            isOK = mfDarkside(FirstBlockOfSector(blockNo), keyType, &key64);
+            isOK = mfDarkside(FirstBlockOfSector(blockNo), keyType + 0x60, &key64);
 
             switch (isOK) {
                 case -1 :
@@ -2386,23 +2392,25 @@ static int CmdHF14AMfAutoPWN(const char *Cmd) {
                     PrintAndLogEx(WARNING, "\nAborted via keyboard.");
                     goto noValidKeyFound;
                 default :
-                    PrintAndLogEx(SUCCESS, "\nFound valid key: %012" PRIx64 "\n", key64);
+                    PrintAndLogEx(SUCCESS, "\nFound valid key: [ " _GREEN_("%012" PRIx64) " ]\n", key64);
                     break;
             }
 
             // Store the keys
+            num_to_bytes(key64, 6, key);
             e_sector[blockNo].Key[keyType] = key64;
             e_sector[blockNo].foundKey[keyType] = 'S';
-            PrintAndLogEx(SUCCESS, "target sector:%3u key type: %c -- found valid key [ " _GREEN_("%s") "] (used for nested / hardnested attack)",
+            PrintAndLogEx(SUCCESS, "target sector:%3u key type: %c -- found valid key [ " _GREEN_("%012" PRIx64) " ] (used for nested / hardnested attack)",
                           blockNo,
                           keyType ? 'B' : 'A',
-                          sprint_hex(key, sizeof(key))
+                          key64
                          );
         } else {
 noValidKeyFound:
             PrintAndLogEx(FAILED, "No usable key was found!");
             free(keyBlock);
             free(e_sector);
+            free(fptr);
             return PM3_ESOFT;
         }
     }
@@ -2516,11 +2524,13 @@ tryNested:
                             case PM3_ETIMEOUT: {
                                 PrintAndLogEx(ERR, "\nError: No response from Proxmark3.");
                                 free(e_sector);
+                                free(fptr);
                                 return PM3_ESOFT;
                             }
                             case PM3_EOPABORTED: {
                                 PrintAndLogEx(WARNING, "\nButton pressed. Aborted.");
                                 free(e_sector);
+                                free(fptr);
                                 return PM3_EOPABORTED;
                             }
                             case PM3_EFAILED: {
@@ -2551,6 +2561,7 @@ tryNested:
                             default: {
                                 PrintAndLogEx(ERR, "unknown Error.\n");
                                 free(e_sector);
+                                free(fptr);
                                 return PM3_ESOFT;
                             }
                         }
@@ -2582,6 +2593,7 @@ tryHardnested: // If the nested attack fails then we try the hardnested attack
                                 }
                             }
                             free(e_sector);
+                            free(fptr);
                             return PM3_ESOFT;
                         }
 
@@ -2606,11 +2618,13 @@ tryStaticnested:
                             case PM3_ETIMEOUT: {
                                 PrintAndLogEx(ERR, "\nError: No response from Proxmark3.");
                                 free(e_sector);
+                                free(fptr);
                                 return PM3_ESOFT;
                             }
                             case PM3_EOPABORTED: {
                                 PrintAndLogEx(WARNING, "\nButton pressed. Aborted.");
                                 free(e_sector);
+                                free(fptr);
                                 return PM3_EOPABORTED;
                             }
                             case PM3_SUCCESS: {
@@ -2676,6 +2690,7 @@ all_found:
     if (!dump) {
         PrintAndLogEx(ERR, "Fail, cannot allocate memory");
         free(e_sector);
+        free(fptr);
         return PM3_EMALLOC;
     }
     memset(dump, 0, bytes);
@@ -2685,16 +2700,19 @@ all_found:
         PrintAndLogEx(ERR, "Fail, transfer from device time-out");
         free(e_sector);
         free(dump);
+        free(fptr);
         return PM3_ETIMEOUT;
     }
 
-    fnameptr = GenerateFilename("hf-mf-", "-dump");
+    char *fnameptr = GenerateFilename("hf-mf-", "-dump");
     if (fnameptr == NULL) {
         free(dump);
         free(e_sector);
+        free(fptr);
         return PM3_ESOFT;
     }
     strcpy(filename, fnameptr);
+    free(fnameptr);
 
     saveFile(filename, ".bin", dump, bytes);
     saveFileEML(filename, dump, bytes, MFBLOCK_SIZE);
@@ -2706,6 +2724,7 @@ all_found:
 
     free(dump);
     free(e_sector);
+    free(fptr);
     return PM3_SUCCESS;
 }
 
@@ -2943,7 +2962,7 @@ out:
         printKeyTable(sectorsCnt, e_sector);
 
         if (use_flashmemory && found_keys == (sectorsCnt << 1)) {
-            PrintAndLogEx(SUCCESS, "Card dumped aswell. run " _YELLOW_("`%s %c`"),
+            PrintAndLogEx(SUCCESS, "Card dumped as well. run " _YELLOW_("`%s %c`"),
                           "hf mf esave",
                           GetFormatFromSector(sectorsCnt)
                          );
@@ -2982,6 +3001,7 @@ out:
             if (createMfcKeyDump(fptr, sectorsCnt, e_sector) != PM3_SUCCESS) {
                 PrintAndLogEx(ERR, "Failed to save keys to file");
             }
+            free(fptr);
         }
     }
 
@@ -3285,6 +3305,7 @@ out:
         if (createMfcKeyDump(fptr, SectorsCnt, e_sector) != PM3_SUCCESS) {
             PrintAndLogEx(ERR, "Failed to save keys to file");
         }
+        free(fptr);
     }
 
     free(keyBlock);
@@ -3649,7 +3670,7 @@ static int CmdHF14AMfEGetSc(const char *Cmd) {
     PrintAndLogEx(NORMAL, "----+------------------------------------------------");
     uint8_t blocks = 4;
     uint8_t start = sector * 4;
-    if (sector > 32) {
+    if (sector >= 32) {
         blocks = 16;
         start = 128 + (sector - 32) * 16;
     }
@@ -3670,7 +3691,6 @@ static int CmdHF14AMfEGetSc(const char *Cmd) {
     decode_print_st(start + blocks - 1, data);
     return PM3_SUCCESS;
 }
-
 
 static int CmdHF14AMfEClear(const char *Cmd) {
     char c = tolower(param_getchar(Cmd, 0));
@@ -4040,7 +4060,6 @@ static int CmdHF14AMfEKeyPrn(const char *Cmd) {
         char *fptr = filename;
         fptr += snprintf(fptr, sizeof(filename), "hf-mf-");
         FillFileNameByUID(fptr + strlen(fptr), uid, "-key", sizeof(uid));
-
         createMfcKeyDump(filename, sectors_cnt, e_sector);
     }
 
@@ -4120,15 +4139,14 @@ static int CmdHF14AMfCWipe(const char *cmd) {
     CLIParserContext *ctx;
     CLIParserInit(&ctx, "hf mf cwipe",
                   "Wipe gen1 magic chinese card. Set UID/ATQA/SAK/Data/Keys/Access to default values.",
-                  "Usage:\n"
-                  _YELLOW_("\thf mf cwipe") " -> wipe card\n"
-                  _YELLOW_("\thf mf cwipe -u 09080706 -a 0004 -s 18") "      -- set UID, ATQA and SAK and wipe card");
+                  "hf mf cwipe -> wipe card\n"
+                  "hf mf cwipe -u 09080706 -a 0004 -s 18 -> set UID, ATQA and SAK and wipe card");
 
     void *argtable[] = {
         arg_param_begin,
-        arg_str0("uU",  "uid",     "<UID (hex 4b)>",  "UID for card"),
-        arg_str0("aA",  "atqa",    "<ATQA (hex 2b)>", "ATQA for card"),
-        arg_str0("sS",  "sak",     "<SAK (hex 1b)>",  "SAK for card"),
+        arg_str0("u",  "uid",     "<UID (hex 4b)>",  "UID for card"),
+        arg_str0("a",  "atqa",    "<ATQA (hex 2b)>", "ATQA for card"),
+        arg_str0("s",  "sak",     "<SAK (hex 1b)>",  "SAK for card"),
         arg_param_end
     };
     CLIExecWithReturn(ctx, cmd, argtable, true);
@@ -4345,7 +4363,7 @@ static int CmdHF14AMfCGetSc(const char *Cmd) {
     PrintAndLogEx(NORMAL, "----+------------------------------------------------");
     uint8_t blocks = 4;
     uint8_t start = sector * 4;
-    if (sector > 32) {
+    if (sector >= 32) {
         blocks = 16;
         start = 128 + (sector - 32) * 16;
     }
@@ -4733,6 +4751,7 @@ static int CmdHF14AMfice(const char *Cmd) {
         if (fptr == NULL)
             return PM3_EFILE;
         strcpy(filename, fptr);
+        free(fptr);
     }
 
     PrintAndLogEx(NORMAL, "Collecting "_YELLOW_("%u")" nonces \n", limit);
@@ -4799,9 +4818,8 @@ static int CmdHF14AMfAuth4(const char *Cmd) {
     CLIParserContext *ctx;
     CLIParserInit(&ctx, "hf mf auth4",
                   "Executes AES authentication command in ISO14443-4",
-                  "Usage:\n"
-                  _YELLOW_("\thf mf auth4 4000 000102030405060708090a0b0c0d0e0f") " -> executes authentication\n"
-                  _YELLOW_("\thf mf auth4 9003 FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF") " -> executes authentication\n");
+                  "hf mf auth4 4000 000102030405060708090a0b0c0d0e0f -> executes authentication\n"
+                  "hf mf auth4 9003 FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF -> executes authentication\n");
 
     void *argtable[] = {
         arg_param_begin,
@@ -4834,43 +4852,58 @@ static int CmdHF14AMfMAD(const char *Cmd) {
     CLIParserContext *ctx;
     CLIParserInit(&ctx, "hf mf mad",
                   "Checks and prints MIFARE Application Directory (MAD)",
-                  "Usage:\n"
-                  _YELLOW_("\thf mf mad") "                                -> shows MAD if exists\n"
-                  _YELLOW_("\thf mf mad --aid e103 -k ffffffffffff -b") "  -> shows NDEF data if exists. read card with custom key and key B\n"
-                  _YELLOW_("\thf mf mad --dch -k ffffffffffff") "          -> decode CardHolder information\n");
+                  "hf mf mad -> shows MAD if exists\n"
+                  "hf mf mad --aid e103 -k ffffffffffff -b -> shows NDEF data if exists. read card with custom key and key B\n"
+                  "hf mf mad --dch -k ffffffffffff -> decode CardHolder information\n");
 
     void *argtable[] = {
         arg_param_begin,
-        arg_lit0("vV",  "verbose",  "show technical data"),
-        arg_str0("",    "aid",      "<aid>", "print all sectors with specified aid"),
-        arg_str0("kK",  "key",      "<key>", "key for printing sectors"),
-        arg_lit0("bB",  "keyb",     "use key B for access printing sectors (by default: key A)"),
-        arg_lit0("",    "be",       "(optional, BigEndian)"),
-        arg_lit0("",    "dch",      "decode Card Holder information"),
+        arg_lit0("v",  "verbose",  "show technical data"),
+        arg_str0(NULL, "aid",      "<aid>", "print all sectors with specified aid"),
+        arg_str0("k",  "key",      "<key>", "key for printing sectors"),
+        arg_lit0("b",  "keyb",     "use key B for access printing sectors (by default: key A)"),
+        arg_lit0(NULL, "be",       "(optional, BigEndian)"),
+        arg_lit0(NULL, "dch",      "decode Card Holder information"),
         arg_param_end
     };
     CLIExecWithReturn(ctx, Cmd, argtable, true);
     bool verbose = arg_get_lit(ctx, 1);
     uint8_t aid[2] = {0};
-    int aidlen;
+    int aidlen = 0;
     CLIGetHexWithReturn(ctx, 2, aid, &aidlen);
-    uint8_t key[6] = {0};
-    int keylen;
-    CLIGetHexWithReturn(ctx, 3, key, &keylen);
+    uint8_t userkey[6] = {0};
+    int keylen = 0;
+    CLIGetHexWithReturn(ctx, 3, userkey, &keylen);
     bool keyB = arg_get_lit(ctx, 4);
     bool swapmad = arg_get_lit(ctx, 5);
     bool decodeholder = arg_get_lit(ctx, 6);
 
     CLIParserFree(ctx);
 
-    if (aidlen != 2 && !decodeholder && keylen > 0) {
-        PrintAndLogEx(WARNING, "Using default MAD keys instead");
-    }
-
     uint8_t sector0[16 * 4] = {0};
     uint8_t sector10[16 * 4] = {0};
-    if (mfReadSector(MF_MAD1_SECTOR, MF_KEY_A, (uint8_t *)g_mifare_mad_key, sector0)) {
-        PrintAndLogEx(ERR, "error, read sector 0. card don't have MAD or don't have MAD on default keys");
+
+    bool got_first = true;
+    if (mfReadSector(MF_MAD1_SECTOR, MF_KEY_A, (uint8_t *)g_mifare_mad_key, sector0) != PM3_SUCCESS) {
+        PrintAndLogEx(WARNING, "error, read sector 0. card don't have MAD or don't have MAD on default keys");
+        got_first = false;
+    } else {
+        PrintAndLogEx(INFO, "Authentication ( " _GREEN_("OK") " )");
+    }
+
+    // User supplied key
+    if (got_first == false && keylen == 6) {
+        PrintAndLogEx(INFO, "Trying user specified key...");
+        if (mfReadSector(MF_MAD1_SECTOR, MF_KEY_A, userkey, sector0) != PM3_SUCCESS) {
+            PrintAndLogEx(ERR, "error, read sector 0. card don't have MAD or don't the custom key is wrong");
+        } else {
+            PrintAndLogEx(INFO, "Authentication ( " _GREEN_("OK") " )");
+            got_first = true;
+        }
+    }
+
+    // Both default and user supplied key failed
+    if (got_first == false) {
         return PM3_ESOFT;
     }
 
@@ -4904,7 +4937,7 @@ static int CmdHF14AMfMAD(const char *Cmd) {
 
         // user specified key
         if (keylen == 6) {
-            memcpy(akey, key, 6);
+            memcpy(akey, userkey, 6);
         }
 
         uint16_t aaid = 0x0004;
@@ -4976,17 +5009,16 @@ static int CmdHFMFNDEF(const char *Cmd) {
     CLIParserContext *ctx;
     CLIParserInit(&ctx, "hf mf ndef",
                   "Prints NFC Data Exchange Format (NDEF)",
-                  "Usage:\n"
-                  _YELLOW_("\thf mf ndef") "                       -> shows NDEF parsed data\n"
-                  _YELLOW_("\thf mf ndef -vv") "                           -> shows NDEF parsed and raw data\n"
-                  _YELLOW_("\thf mf ndef --aid e103 -k ffffffffffff -b") " -> shows NDEF data with custom AID, key and with key B\n");
+                  "hf mf ndef -> shows NDEF parsed data\n"
+                  "hf mf ndef -vv -> shows NDEF parsed and raw data\n"
+                  "hf mf ndef --aid e103 -k ffffffffffff -b -> shows NDEF data with custom AID, key and with key B\n");
 
     void *argtable[] = {
         arg_param_begin,
-        arg_litn("vV",  "verbose",  0, 2, "show technical data"),
-        arg_str0("",    "aid",      "<aid>", "replace default aid for NDEF"),
-        arg_str0("kK",  "key",      "<key>", "replace default key for NDEF"),
-        arg_lit0("bB",  "keyb",     "use key B for access sectors (by default: key A)"),
+        arg_litn("v",  "verbose",  0, 2, "show technical data"),
+        arg_str0(NULL, "aid",      "<aid>", "replace default aid for NDEF"),
+        arg_str0("k",  "key",      "<key>", "replace default key for NDEF"),
+        arg_lit0("b",  "keyb",     "use key B for access sectors (by default: key A)"),
         arg_param_end
     };
     CLIExecWithReturn(ctx, Cmd, argtable, true);
@@ -5078,7 +5110,7 @@ static int CmdHFMFNDEF(const char *Cmd) {
     if (verbose2) {
         PrintAndLogEx(NORMAL, "");
         PrintAndLogEx(INFO, "--- " _CYAN_("MFC NDEF raw") " ----------------");
-        dump_buffer(data, datalen, stdout, 1);
+        print_buffer(data, datalen, 1);
     }
 
     NDEFDecodeAndPrint(data, datalen, verbose);
@@ -5092,17 +5124,16 @@ static int CmdHFMFPersonalize(const char *cmd) {
     CLIParserContext *ctx;
     CLIParserInit(&ctx, "hf mf personalize",
                   "Personalize the UID of a MIFARE Classic EV1 card. This is only possible if it is a 7Byte UID card and if it is not already personalized.",
-                  "Usage:\n"
-                  _YELLOW_("\thf mf personalize UIDF0") "                        -> double size UID according to ISO/IEC14443-3\n"
-                  _YELLOW_("\thf mf personalize UIDF1") "                        -> double size UID according to ISO/IEC14443-3, optional usage of selection process shortcut\n"
-                  _YELLOW_("\thf mf personalize UIDF2") "                        -> single size random ID according to ISO/IEC14443-3\n"
-                  _YELLOW_("\thf mf personalize UIDF3") "                        -> single size NUID according to ISO/IEC14443-3\n"
-                  _YELLOW_("\thf mf personalize -t B -k B0B1B2B3B4B5 UIDF3") "   -> use key B = 0xB0B1B2B3B4B5 instead of default key A\n");
+                  "hf mf personalize UIDF0 -> double size UID according to ISO/IEC14443-3\n"
+                  "hf mf personalize UIDF1 -> double size UID according to ISO/IEC14443-3, optional usage of selection process shortcut\n"
+                  "hf mf personalize UIDF2 -> single size random ID according to ISO/IEC14443-3\n"
+                  "hf mf personalize UIDF3 -> single size NUID according to ISO/IEC14443-3\n"
+                  "hf mf personalize -t B -k B0B1B2B3B4B5 UIDF3 -> use key B = 0xB0B1B2B3B4B5 instead of default key A");
 
     void *argtable[] = {
         arg_param_begin,
-        arg_str0("tT",  "keytype", "<A|B>",                     "key type (A or B) to authenticate sector 0 (default: A)"),
-        arg_str0("kK",  "key",     "<key (hex 6 Bytes)>",       "key to authenticate sector 0 (default: FFFFFFFFFFFF)"),
+        arg_str0("t",  "keytype", "<A|B>",                     "key type (A or B) to authenticate sector 0 (default: A)"),
+        arg_str0("k",  "key",     "<key (hex 6 Bytes)>",       "key to authenticate sector 0 (default: FFFFFFFFFFFF)"),
         arg_str1(NULL,  NULL,      "<UIDF0|UIDF1|UIDF2|UIDF3>", "Personalization Option"),
         arg_param_end
     };
@@ -5179,8 +5210,13 @@ static int CmdHFMFPersonalize(const char *cmd) {
 }
 
 static int CmdHF14AMfList(const char *Cmd) {
-    (void)Cmd; // Cmd is not used so far
-    return CmdTraceList("mf");
+    char args[128] = {0};
+    if (strlen(Cmd) == 0) {
+        snprintf(args, sizeof(args), "-t mf");
+    } else {
+        strncpy(args, Cmd, sizeof(args) - 1);
+    }
+    return CmdTraceList(args);
 }
 
 static int CmdHf14AGen3UID(const char *Cmd) {
@@ -5245,6 +5281,147 @@ static int CmdHf14AGen3Freeze(const char *Cmd) {
     return PM3_SUCCESS;
 }
 
+
+static void des_decrypt(void *out, const void *in, const void *key) {
+    mbedtls_des_context ctx;
+    mbedtls_des_setkey_dec(&ctx, key);
+    mbedtls_des_crypt_ecb(&ctx, in, out);
+}
+
+static int CmdHf14AMfSuperCard(const char *Cmd) {
+
+    CLIParserContext *ctx;
+    CLIParserInit(&ctx, "hf mf supercard",
+                  "Extract info from a `super card`",
+                  "hf mf supercard");
+
+    void *argtable[] = {
+        arg_param_begin,
+        arg_lit0("r",  "reset",  "reset card"),
+        arg_param_end
+    };
+    CLIExecWithReturn(ctx, Cmd, argtable, true);
+    bool reset_card = arg_get_lit(ctx, 1);
+    CLIParserFree(ctx);
+
+    bool activate_field = true;
+    bool keep_field_on = true;
+    int res = 0;
+
+    if (reset_card)  {
+
+        keep_field_on = false;
+        uint8_t response[6];
+        int resplen = 0;
+
+        // --------------- RESET CARD ----------------
+        uint8_t aRESET[] = { 0x00, 0xa6, 0xc0,  0x00 };
+        res = ExchangeAPDU14a(aRESET, sizeof(aRESET), activate_field, keep_field_on, response, sizeof(response), &resplen);
+        if (res) {
+            PrintAndLogEx(FAILED, "Super card reset [ " _RED_("fail") " ]");
+            DropField();
+            return res;
+        }
+        PrintAndLogEx(SUCCESS, "Super card reset [ " _GREEN_("ok") " ]");
+        return PM3_SUCCESS;
+    }
+
+
+    uint8_t responseA[22];
+    uint8_t responseB[22];
+    int respAlen = 0;
+    int respBlen = 0;
+
+    // --------------- First ----------------
+    uint8_t aFIRST[] = { 0x00, 0xa6, 0xb0,  0x00,  0x10 };
+    res = ExchangeAPDU14a(aFIRST, sizeof(aFIRST), activate_field, keep_field_on, responseA, sizeof(responseA), &respAlen);
+    if (res) {
+        DropField();
+        return res;
+    }
+
+    // --------------- Second ----------------
+    activate_field = false;
+    keep_field_on = false;
+
+    uint8_t aSECOND[] = { 0x00, 0xa6, 0xb0,  0x01,  0x10 };
+    res = ExchangeAPDU14a(aSECOND, sizeof(aSECOND), activate_field, keep_field_on, responseB, sizeof(responseB), &respBlen);
+    if (res) {
+        DropField();
+        return res;
+    }
+
+// uint8_t inA[] = { 0x72, 0xD7, 0xF4, 0x3E, 0xFD, 0xAB, 0xF2, 0x35, 0xFD, 0x49, 0xEE, 0xDC, 0x44, 0x95, 0x43, 0xC4};
+// uint8_t inB[] = { 0xF0, 0xA2, 0x67, 0x6A, 0x04, 0x6A, 0x72, 0x12, 0x76, 0xA4, 0x1D, 0x02, 0x1F, 0xEA, 0x20, 0x85};
+
+    uint8_t outA[16] = {0};
+    uint8_t outB[16] = {0};
+
+    uint8_t key[] = {0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88};
+    for (uint8_t i = 0; i < 16; i += 8) {
+        des_decrypt(outA + i, responseA + i, key);
+        des_decrypt(outB + i, responseB + i, key);
+    }
+
+    PrintAndLogEx(DEBUG, " in : %s", sprint_hex_inrow(responseA, respAlen));
+    PrintAndLogEx(DEBUG, "out : %s", sprint_hex_inrow(outA, sizeof(outA)));
+    PrintAndLogEx(DEBUG, " in : %s", sprint_hex_inrow(responseB, respAlen));
+    PrintAndLogEx(DEBUG, "out : %s", sprint_hex_inrow(outB, sizeof(outB)));
+
+    if (memcmp(outA, "\x01\x01\x01\x01\x01\x01\x01\x01", 8) == 0) {
+        PrintAndLogEx(INFO, "No trace recorded");
+        return PM3_SUCCESS;
+    }
+
+    // second trace?
+    if (memcmp(outB, "\x01\x01\x01\x01\x01\x01\x01\x01", 8) == 0) {
+        PrintAndLogEx(INFO, "Only one trace recorded");
+        return PM3_SUCCESS;
+    }
+
+    nonces_t data;
+
+    // first
+    uint16_t NT0 = (outA[6] << 8) | outA[7];
+    data.cuid = bytes_to_num(outA, 4);
+    data.nonce = prng_successor(NT0, 31);
+    data.nr = bytes_to_num(outA + 8, 4);
+    data.ar = bytes_to_num(outA + 12, 4);
+    data.at = 0;
+
+    // second
+    NT0 = (outB[6] << 8) | outB[7];
+    data.nonce2 =  prng_successor(NT0, 31);;
+    data.nr2 = bytes_to_num(outB + 8, 4);
+    data.ar2 = bytes_to_num(outB + 12, 4);
+    data.sector = GetSectorFromBlockNo(outA[5]);
+    data.keytype = outA[4];
+    data.state = FIRST;
+
+    PrintAndLogEx(DEBUG, "A Sector %02x", data.sector);
+    PrintAndLogEx(DEBUG, "A NT  %08x", data.nonce);
+    PrintAndLogEx(DEBUG, "A NR  %08x", data.nr);
+    PrintAndLogEx(DEBUG, "A AR  %08x", data.ar);
+    PrintAndLogEx(DEBUG, "");
+    PrintAndLogEx(DEBUG, "B NT  %08x", data.nonce2);
+    PrintAndLogEx(DEBUG, "B NR  %08x", data.nr2);
+    PrintAndLogEx(DEBUG, "B AR  %08x", data.ar2);
+
+    uint64_t key64 = -1;
+    res = mfkey32_moebius(&data, &key64);
+
+    if (res) {
+        PrintAndLogEx(SUCCESS, "UID: %s Sector %02x key %c [ " _GREEN_("%12" PRIX64) " ]"
+                      , sprint_hex_inrow(outA, 4)
+                      , data.sector
+                      , (data.keytype == 0x60) ? 'A' : 'B'
+                      , key64);
+    } else {
+        PrintAndLogEx(FAILED, "failed to recover any key");
+    }
+    return PM3_SUCCESS;
+}
+
 static command_t CommandTable[] = {
     {"help",        CmdHelp,                AlwaysAvailable, "This help"},
     {"list",        CmdHF14AMfList,         AlwaysAvailable,  "List MIFARE history"},
@@ -5259,6 +5436,7 @@ static command_t CommandTable[] = {
     {"chk",         CmdHF14AMfChk,          IfPm3Iso14443a,  "Check keys"},
     {"fchk",        CmdHF14AMfChk_fast,     IfPm3Iso14443a,  "Check keys fast, targets all keys on card"},
     {"decrypt",     CmdHf14AMfDecryptBytes, AlwaysAvailable, "[nt] [ar_enc] [at_enc] [data] - to decrypt sniff or trace"},
+    {"supercard",   CmdHf14AMfSuperCard,    IfPm3Iso14443a,  "Extract info from a `super card`"},
     {"-----------", CmdHelp,                IfPm3Iso14443a,  "----------------------- " _CYAN_("operations") " -----------------------"},
     {"auth4",       CmdHF14AMfAuth4,        IfPm3Iso14443a,  "ISO14443-4 AES authentication"},
     {"dump",        CmdHF14AMfDump,         IfPm3Iso14443a,  "Dump MIFARE Classic tag to binary file"},
@@ -5276,13 +5454,13 @@ static command_t CommandTable[] = {
     {"ecfill",      CmdHF14AMfECFill,       IfPm3Iso14443a,  "Fill simulator memory with help of keys from simulator"},
     {"eclr",        CmdHF14AMfEClear,       IfPm3Iso14443a,  "Clear simulator memory"},
     {"egetblk",     CmdHF14AMfEGetBlk,      IfPm3Iso14443a,  "Get simulator memory block"},
-    {"egetsc",      CmdHF14AMfEGetSc,       IfPm3Iso14443a,  "Get simulator memory sector"},    
+    {"egetsc",      CmdHF14AMfEGetSc,       IfPm3Iso14443a,  "Get simulator memory sector"},
     {"ekeyprn",     CmdHF14AMfEKeyPrn,      IfPm3Iso14443a,  "Print keys from simulator memory"},
     {"eload",       CmdHF14AMfELoad,        IfPm3Iso14443a,  "Load from file emul dump"},
     {"esave",       CmdHF14AMfESave,        IfPm3Iso14443a,  "Save to file emul dump"},
     {"eset",        CmdHF14AMfESet,         IfPm3Iso14443a,  "Set simulator memory block"},
     {"eview",       CmdHF14AMfEView,        IfPm3Iso14443a,  "View emul memory"},
-    {"-----------", CmdHelp,                IfPm3Iso14443a,  "----------------------- " _CYAN_("magic") " -----------------------"},
+    {"-----------", CmdHelp,                IfPm3Iso14443a,  "----------------------- " _CYAN_("magic gen1") " -----------------------"},
     {"cgetblk",     CmdHF14AMfCGetBlk,      IfPm3Iso14443a,  "Read block"},
     {"cgetsc",      CmdHF14AMfCGetSc,       IfPm3Iso14443a,  "Read sector"},
     {"cload",       CmdHF14AMfCLoad,        IfPm3Iso14443a,  "Load dump"},

@@ -160,8 +160,8 @@ ISO 7816-4 Basic interindustry commands. For command APDU's.
 #define MIFARE_MAGICWUPC1           0x40
 #define MIFARE_MAGICWUPC2           0x43
 #define MIFARE_MAGICWIPEC           0x41
-#define MIFARE_CMD_INC              0xC0
-#define MIFARE_CMD_DEC              0xC1
+#define MIFARE_CMD_DEC              0xC0
+#define MIFARE_CMD_INC              0xC1
 #define MIFARE_CMD_RESTORE          0xC2
 #define MIFARE_CMD_TRANSFER         0xB0
 
@@ -246,6 +246,16 @@ ISO 7816-4 Basic interindustry commands. For command APDU's.
 #define ISO14443B_AUTHENTICATE 0x0A
 #define ISO14443B_PING         0xBA
 #define ISO14443B_PONG         0xAB
+
+// ASK C-ticket
+#define ASK_REQT               0x10
+#define ASK_IDENTIFY           0x0F
+#define ASK_SELECT             0x9F
+#define ASK_MULTREAD           (0x1 << 4) // High nibble
+#define ASK_UPDATE             (0x3 << 4) // High nibble
+#define ASK_WRITE              (0x5 << 4) // High nibble
+#define ASK_READ               (0x6 << 4) // High nibble
+#define ASK_DESACTIVATE        0xF0
 
 
 // defined crypto RF commands
@@ -531,8 +541,8 @@ ISO 7816-4 Basic interindustry commands. For command APDU's.
 #define T55XX_WRITE_TIMEOUT 1500
 
 // em4x05 & em4x69 chip configuration register definitions
-#define EM4x05_GET_BITRATE(x)           (((x & 0x3F)*2)+2)
-#define EM4x05_SET_BITRATE(x)           ((x-2)/2)
+#define EM4x05_GET_BITRATE(x)           ((((x) & 0x3F) * 2) + 2)
+#define EM4x05_SET_BITRATE(x)           (((x) - 2) / 2)
 #define EM4x05_MODULATION_NRZ           0x00000000
 #define EM4x05_MODULATION_MANCHESTER    0x00000040
 #define EM4x05_MODULATION_BIPHASE       0x00000080
@@ -547,15 +557,17 @@ ISO 7816-4 Basic interindustry commands. For command APDU's.
 #define EM4x05_PSK_RF_8                 0x00000800
 #define EM4x05_MAXBLOCK_SHIFT           14
 #define EM4x05_FIRST_USER_BLOCK         5
-#define EM4x05_SET_NUM_BLOCKS(x)        ((x+5-1)<<14) //# of blocks sent during default read mode
-#define EM4x05_GET_NUM_BLOCKS(x)        (((x>>14) & 0xF)-5+1)
-#define EM4x05_READ_LOGIN_REQ           1<<18
-#define EM4x05_READ_HK_LOGIN_REQ        1<<19
-#define EM4x05_WRITE_LOGIN_REQ          1<<20
-#define EM4x05_WRITE_HK_LOGIN_REQ       1<<21
-#define EM4x05_READ_AFTER_WRITE         1<<22
-#define EM4x05_DISABLE_ALLOWED          1<<23
-#define EM4x05_READER_TALK_FIRST        1<<24
+#define EM4x05_SET_NUM_BLOCKS(x)        (( (x) + 4) << 14) //# of blocks sent during default read mode
+#define EM4x05_GET_NUM_BLOCKS(x)        ((( (x) >> 14) & 0xF) - 4)
+#define EM4x05_READ_LOGIN_REQ           (1 << 18)
+#define EM4x05_READ_HK_LOGIN_REQ        (1 << 19)
+#define EM4x05_WRITE_LOGIN_REQ          (1 << 20)
+#define EM4x05_WRITE_HK_LOGIN_REQ       (1 << 21)
+#define EM4x05_READ_AFTER_WRITE         (1 << 22)
+#define EM4x05_DISABLE_ALLOWED          (1 << 23)
+#define EM4x05_READER_TALK_FIRST        (1 << 24)
+#define EM4x05_INVERT                   (1 << 25)
+#define EM4x05_PIGEON                   (1 << 26)
 
 
 // FeliCa protocol

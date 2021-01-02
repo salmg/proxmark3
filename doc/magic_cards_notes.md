@@ -45,12 +45,12 @@ Here are some tips if the card doesn't react or gives error on a simple `hf 14a 
 
 Let's force a 4b UID anticollision and see what happens:
 ```
-hf 14a config a 1 b 2 2 2 r 2
+hf 14a config --atqa force --bcc ignore --cl2 skip --rats skip
 hf 14a reader
 ```
 It it responds, we know it's a TypeA card. But maybe it's a 7b UID, so let's force a 7b UID anticollision:
 ```
-hf 14a config a 1 b 2 2 1 3 2 r 2
+hf 14a config --atqa force --bcc ignore --cl2 force --cl3 skip --rats skip
 hf 14a reader
 ```
 At this stage, you know if it's a TypeA 4b or 7b card and you can check further on this page how to reconfigure different types of cards.
@@ -58,7 +58,7 @@ At this stage, you know if it's a TypeA 4b or 7b card and you can check further 
 To restore anticollision config of the Proxmark3:
 
 ```
-hf 14a config a 0 b 0 2 0 3 0 r 0
+hf 14a config --std
 ```
 # MIFARE Classic
 
@@ -200,14 +200,14 @@ script run run hf_mf_magicrevive
 
 To execute commands manually:
 ```
-hf 14a raw -a -p -b 7       40
-hf 14a raw    -p            43
-hf 14a raw    -p -c         A000
+hf 14a raw -a -k -b 7       40
+hf 14a raw    -k            43
+hf 14a raw    -k -c         A000
 hf 14a raw       -c -t 1000 11223344440804006263646566676869
 ```
 wipe:
 ```
-hf 14a raw -a -p -b 7       40
+hf 14a raw -a -k -b 7       40
 hf 14a raw -t 1000          41
 ```
 
@@ -238,6 +238,8 @@ hf 14a info
 
 ## MIFARE Classic DirectWrite aka Gen2 aka CUID
 
+(also referred as MCT compatible by some sellers)
+
 ### Identify
 
 ```
@@ -267,7 +269,7 @@ Android compatible
   * some cards use a fix "08" or "18" in anticollision, no matter the block0. Including all 7b.
 * BCC:
   * some cards play blindly the block0 BCC byte, beware!
-  * some cards compute a proper BCC in anticollision. Including all 7b comuting their BCC0 and BCC1.
+  * some cards compute a proper BCC in anticollision. Including all 7b computing their BCC0 and BCC1.
 * ATS:
   * some cards don't reply to RATS
   * some reply with an ATS
@@ -333,26 +335,26 @@ hf mf wrbl 0 A FFFFFFFFFFFF 11223344440804006263646566676869
 When "soft-bricked" (by writing invalid data in block0), these ones may help:
 
 ```
-hf 14a config h
+hf 14a config -h
 ```
 
 e.g. for 4b UID:
 
 ```
-hf 14a config a 1 b 2 2 2 r 2
+hf 14a config --atqa force --bcc ignore --cl2 skip --rats skip
 hf mf wrbl 0 A FFFFFFFFFFFF 11223344440804006263646566676869 # for 1k
 hf mf wrbl 0 A FFFFFFFFFFFF 11223344441802006263646566676869 # for 4k
-hf 14a config a 0 b 0 2 0 r 0
+hf 14a config --std
 hf 14a reader
 ```
 
 e.g. for 7b UID:
 
 ```
-hf 14a config a 1 b 2 2 1 3 2 r 2
+hf 14a config --atqa force --bcc ignore --cl2 force --cl3 skip --rats skip
 hf mf wrbl 0 A FFFFFFFFFFFF 04112233445566084400626364656667 # for 1k
 hf mf wrbl 0 A FFFFFFFFFFFF 04112233445566184200626364656667 # for 4k
-hf 14a config a 0 b 0 2 0 3 0 r 0
+hf 14a config --std
 hf 14a reader
 ```
 ## MIFARE Classic DirectWrite, FUID version aka 1-write
@@ -363,7 +365,7 @@ Initial UID is AA55C396
 
 ### Identify
 
-Only possible before personalisation.
+Only possible before personalization.
 
 ```
 hf 14a info
@@ -383,9 +385,9 @@ Same as MIFARE Classic DirectWrite, but block0 can be locked with special comman
 
 To lock definitively block0:
 ```
-hf 14a raw -a -p -b 7 40
-hf 14a raw    -p      43
-hf 14a raw    -p -c   e000
+hf 14a raw -a -k -b 7 40
+hf 14a raw    -k      43
+hf 14a raw    -k -c   e000
 hf 14a raw       -c   85000000000000000000000000000008
 ```
 
@@ -424,6 +426,12 @@ Note: it seems some cards only accept the "change UID" command.
 
 It accepts direct read of block0 (and only block0) without prior auth.
 
+Writing to block 0 has some side-effects:
+
+* It changes also the UID. Changing the UID *does not* change block 0.
+* ATQA and SAK bytes are automatically replaced by fixed values.
+* On 4-byte UID cards, BCC byte is automatically corrected.
+
 ### Characteristics
 
 * UID: 4b and 7b versions
@@ -450,6 +458,8 @@ Equivalent:
 ```
 # change just UID:
 hf 14a raw -s -c  -t 2000  90FBCCCC07 11223344556677
+# read block0:
+hf 14a raw -s -c 3000
 # write block0:
 hf 14a raw -s -c  -t 2000  90F0CCCC10 041219c3219316984200e32000000000
 # lock (uid/block0?) forever:
@@ -495,6 +505,9 @@ Computing BCC1 on UID 04112233445566: `analyse lcr 33445566` = `44`
 
 Int is internal, typically 0x48
 
+Anticol shortcut (CL1/3000) is supported for UL, ULC, NTAG except NTAG I2C
+
+
 ## MIFARE Ultralight Gen1A
 
 ### Identify
@@ -524,7 +537,7 @@ script run hf_mfu_setuid -h
 When "soft-bricked" (by writing invalid data in block0), these ones may help:
 
 ```
-hf 14a config h
+hf 14a config -h
 script run run hf_mf_magicrevive -u
 ```
 
@@ -561,11 +574,13 @@ Issue three regular MFU write commands in a row to write first three blocks.
 
 * BCC: computed
 * ATS: 0A78008102DBA0C119402AB5
+* Anticol shortcut (CL1/3000): fails
 
 #### MIFARE Ultralight DirectWrite flavour 2
 
 * BCC: play blindly the block0 BCC0 and block2 BCC1 bytes, beware!
 * ATS: 850000A00A000AB00000000000000000184D
+* Anticol shortcut (CL1/3000): succeeds
 
 ### Proxmark3 commands
 
@@ -576,22 +591,22 @@ hf mfu setuid
 Equivalent: don't use `hf mfu wrbl` as you need to write three blocks in a row, but do, with proper BCCx:
 
 ```
-hf 14a raw -s -c -p a2 00 041122bf 
-hf 14a raw    -c -p a2 01 33445566
+hf 14a raw -s -c -k a2 00 041122bf 
+hf 14a raw    -c -k a2 01 33445566
 hf 14a raw    -c    a2 02 44480000
 ```
 
 When "soft-bricked" (by writing invalid data in block0), these ones may help:
 
 ```
-hf 14a config h
+hf 14a config -h
 ```
 
 E.g.:
 ```
-hf 14a config a 1 b 2 2 1 3 2 r 2
+hf 14a config --atqa force --bcc ignore --cl2 force --cl3 skip --rats skip
 hf mfu setuid 04112233445566
-hf 14a config a 0 b 0 2 0 3 0 r 0
+hf 14a config --std
 hf 14a reader
 ```
 
@@ -672,6 +687,7 @@ hf 14a info
 
 * BCC: computed
 * ATS: 0A78008102DBA0C119402AB5
+* Anticol shortcut (CL1/3000): fails
 
 # NTAG
 
@@ -703,6 +719,7 @@ hf 14a info
 
 * BCC: play blindly the block0 BCC0 and block2 BCC1 bytes, beware!
 * ATS: 0A78008102DBA0C119402AB5
+* Anticol shortcut (CL1/3000): succeeds
 
 ## NTAG21x
 
@@ -719,6 +736,8 @@ hf 14a info
 Emulates fully NTAG213, 213F, 215, 216, 216F
 
 Emulates partially  UL EV1 48k/128k, NTAG210, NTAG212, NTAGI2C 1K/2K, NTAGI2C 1K/2K PLUS
+
+Anticol shortcut (CL1/3000): fails
 
 ### Proxmark3 commands
 

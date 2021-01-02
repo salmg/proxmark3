@@ -84,6 +84,21 @@ typedef struct {
     uint8_t *parity;
 } tUart14a;
 
+// indices into responses array:
+typedef enum {
+    RESP_INDEX_ATQA,
+    RESP_INDEX_UIDC1,
+    RESP_INDEX_UIDC2,
+    RESP_INDEX_UIDC3,
+    RESP_INDEX_SAKC1,
+    RESP_INDEX_SAKC2,
+    RESP_INDEX_SAKC3,
+    RESP_INDEX_RATS,
+    RESP_INDEX_VERSION,
+    RESP_INDEX_SIGNATURE,
+    RESP_INDEX_PPS
+} resp_index_t;
+
 #ifndef AddCrc14A
 # define AddCrc14A(data, len) compute_crc(CRC_14443_A, (data), (len), (data)+(len), (data)+(len)+1)
 #endif
@@ -114,7 +129,7 @@ RAMFUNC bool MillerDecoding(uint8_t bit, uint32_t non_real_time);
 RAMFUNC int ManchesterDecoding(uint8_t bit, uint16_t offset, uint32_t non_real_time);
 
 void RAMFUNC SniffIso14443a(uint8_t param);
-void SimulateIso14443aTag(uint8_t tagType, uint8_t flags, uint8_t *data);
+void SimulateIso14443aTag(uint8_t tagType, uint8_t flags, uint8_t *data, uint8_t numReads);
 bool SimulateIso14443aInit(int tagType, int flags, uint8_t *data, tag_response_info_t **responses, uint32_t *cuid, uint32_t counters[3], uint8_t tearings[3], uint8_t *pages);
 bool GetIso14443aCommandFromReader(uint8_t *received, uint8_t *par, int *len);
 void iso14443a_antifuzz(uint32_t flags);
@@ -129,7 +144,6 @@ int iso14_apdu(uint8_t *cmd, uint16_t cmd_len, bool send_chaining, void *data, u
 int iso14443a_select_card(uint8_t *uid_ptr, iso14a_card_select_t *p_card, uint32_t *cuid_ptr, bool anticollision, uint8_t num_cascades, bool no_rats);
 int iso14443a_fast_select_card(uint8_t *uid_ptr, uint8_t num_cascades);
 void iso14a_set_trigger(bool enable);
-void hf_field_off(void);
 
 int EmSendCmd14443aRaw(uint8_t *resp, uint16_t respLen);
 int EmSend4bit(uint8_t resp);

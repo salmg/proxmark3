@@ -1153,7 +1153,7 @@ static int CmdEMVExec(const char *Cmd) {
             // 9F27: Cryptogram Information Data (CID)
             const struct tlv *CID = tlvdb_get(tlvRoot, 0x9F27, NULL);
             if (CID) {
-                emv_tag_dump(CID, stdout, 0);
+                emv_tag_dump(CID, 1);
                 PrintAndLogEx(NORMAL, "------------------------------");
                 if (CID->len > 0) {
                     switch (CID->value[0] & EMVAC_AC_MASK) {
@@ -1356,10 +1356,10 @@ static int CmdEMVExec(const char *Cmd) {
             // here must be AC2, but we dont make external authenticate (
             /*          // AC2
                         PRINT_INDENT(level);
-                        if ((CID & EMVAC_AC2_MASK) == EMVAC_AAC2)     fprintf(f, "\tAC2: AAC (Transaction declined)\n");
-                        if ((CID & EMVAC_AC2_MASK) == EMVAC_TC2)      fprintf(f, "\tAC2: TC (Transaction approved)\n");
-                        if ((CID & EMVAC_AC2_MASK) == EMVAC_ARQC2)    fprintf(f, "\tAC2: not requested (ARQC)\n");
-                        if ((CID & EMVAC_AC2_MASK) == EMVAC_AC2_MASK) fprintf(f, "\tAC2: RFU\n");
+                        if ((CID & EMVAC_AC2_MASK) == EMVAC_AAC2)     PrintAndLogEx(NORMAL, "\tAC2: AAC (Transaction declined)");
+                        if ((CID & EMVAC_AC2_MASK) == EMVAC_TC2)      PrintAndLogEx(NORMAL, "\tAC2: TC (Transaction approved)");
+                        if ((CID & EMVAC_AC2_MASK) == EMVAC_ARQC2)    PrintAndLogEx(NORMAL, "\tAC2: not requested (ARQC)");
+                        if ((CID & EMVAC_AC2_MASK) == EMVAC_AC2_MASK) PrintAndLogEx(NORMAL, "\tAC2: RFU");
             */
         }
     }
@@ -1435,7 +1435,7 @@ static int CmdEMVScan(const char *Cmd) {
     uint8_t psenum = (channel == ECC_CONTACT) ? 1 : 2;
 
     uint8_t filename[FILE_PATH_SIZE] = {0};
-    int filenamelen = 0;
+    int filenamelen = sizeof(filename);
     CLIGetStrWithReturn(ctx, 12, filename, &filenamelen);
 
     CLIParserFree(ctx);
@@ -1772,8 +1772,13 @@ static int CmdEMVScan(const char *Cmd) {
 }
 
 static int CmdEMVList(const char *Cmd) {
-    (void)Cmd; // Cmd is not used so far
-    return CmdTraceList("7816");
+    char args[128] = {0};
+    if (strlen(Cmd) == 0) {
+        snprintf(args, sizeof(args), "-t 7816");
+    } else {
+        strncpy(args, Cmd, sizeof(args) - 1);
+    }
+    return CmdTraceList(args);
 }
 
 static int CmdEMVTest(const char *Cmd) {

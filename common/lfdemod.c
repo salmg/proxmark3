@@ -1081,6 +1081,11 @@ int DetectPSKClock(uint8_t *dest, size_t size, int clock, size_t *firstPhaseShif
     *firstPhaseShift = firstFullWave;
     if (g_debugMode == 2) prnt("DEBUG PSK: firstFullWave: %zu, waveLen: %d", firstFullWave, fullWaveLen);
 
+    // Avoid autodetect if user selected a clock
+    for (uint8_t validClk = 1; validClk < 8; validClk++) {
+        if (clock == clk[validClk]) return (clock);
+    }
+
     //test each valid clock from greatest to smallest to see which lines up
     for (clkCnt = 7; clkCnt >= 1 ; clkCnt--) {
         uint8_t tol = *fc / 2;
@@ -1663,6 +1668,7 @@ int askdemod_ext(uint8_t *bits, size_t *size, int *clk, int *invert, int maxErr,
         return errCnt;
     }
 
+    *startIdx = start - (*clk / 2);
     if (g_debugMode == 2) prnt("DEBUG: (askdemod_ext) Weak wave detected: startIdx %i", *startIdx);
 
     int lastBit;  //set first clock check - can go negative
@@ -2165,26 +2171,6 @@ int HIDdemodFSK(uint8_t *dest, size_t *size, uint32_t *hi2, uint32_t *hi, uint32
         else // 0 1
             *lo |= 0;
     }
-    return (int)start_idx;
-}
-
-// Find IDTEC PSK1, RF  Preamble == 0x4944544B, Demodsize 64bits
-// by iceman
-int detectIdteck(uint8_t *dest, size_t *size) {
-    //make sure buffer has data
-    if (*size < 64 * 2) return -1;
-
-    if (signalprop.isnoise) return -2;
-
-    size_t start_idx = 0;
-    uint8_t preamble[] = {0, 1, 0, 0, 1, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 1, 0, 1, 1};
-
-    //preamble not found
-    if (!preambleSearch(dest, preamble, sizeof(preamble), size, &start_idx))
-        return -3;
-
-    // wrong demoded size
-    if (*size != 64) return -4;
     return (int)start_idx;
 }
 

@@ -19,6 +19,7 @@
 #include <mbedtls/cmac.h>
 #include <mbedtls/pk.h>
 #include <mbedtls/ecdsa.h>
+#include <mbedtls/sha1.h>
 #include <mbedtls/sha256.h>
 #include <mbedtls/sha512.h>
 #include <mbedtls/ctr_drbg.h>
@@ -89,6 +90,15 @@ static int fixed_rand(void *rng_state, unsigned char *output, size_t len) {
     } else {
         memset(output, 0x00, len);
     }
+
+    return 0;
+}
+
+int sha1hash(uint8_t *input, int length, uint8_t *hash) {
+    if (!hash || !input)
+        return 1;
+
+    mbedtls_sha1(input, length, hash);
 
     return 0;
 }
@@ -418,7 +428,7 @@ int ecdsa_nist_test(bool verbose) {
     // make signature
     res = ecdsa_signature_create_test(curveid, T_PRIVATE_KEY, T_Q_X, T_Q_Y, T_K, input, length, signature, &siglen);
 // PrintAndLogEx(INFO, "res: %x signature[%x]: %s", (res < 0)? -res : res, siglen, sprint_hex(signature, siglen));
-    if (res)
+    if (res != PM3_SUCCESS)
         goto exit;
 
     // check vectors
@@ -483,7 +493,7 @@ int ecdsa_nist_test(bool verbose) {
     if (verbose)
         PrintAndLogEx(NORMAL, _GREEN_("passed\n"));
 
-    return 0;
+    return PM3_SUCCESS;
 exit:
     if (verbose)
         PrintAndLogEx(NORMAL, _RED_("failed\n"));

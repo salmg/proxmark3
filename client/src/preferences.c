@@ -12,7 +12,7 @@
 //      Add the new setting to the session_arg_t; in ui.h
 //      Add the default value for the setting in the settings_load page below
 //      Update the preferences_load_callback to load your setting into the stucture
-//      Update the preferences_save_callback to enusre your setting gets saved when needed.
+//      Update the preferences_save_callback to ensure your setting gets saved when needed.
 //      use the preference as needed : session.<preference name>
 //      Can use (session.preferences_loaded) to check if json settings file was used
 //-----------------------------------------------------------------------------
@@ -52,8 +52,10 @@ int preferences_load(void) {
     session.overlay.y = 60 + session.plot.y + session.plot.h;
     session.overlay.h = 200;
     session.overlay.w = session.plot.w;
-    session.show_hints = false;
+    session.overlay_sliders = true;
+    session.show_hints = true;
 
+    session.bar_mode = STYLE_VALUE;
 //    setDefaultPath (spDefault, "");
 //    setDefaultPath (spDump, "");
 //    setDefaultPath (spTrace, "");
@@ -78,6 +80,11 @@ int preferences_load(void) {
             setDefaultPath (spTrace, ".");
     */
 
+    if (session.incognito) {
+        PrintAndLogEx(INFO, "No preferences file will be loaded");
+        return PM3_SUCCESS;
+    }
+
     // loadFileJson wants these, so pass in place holder values, though not used
     // in settings load;
     uint8_t dummyData = 0x00;
@@ -100,7 +107,10 @@ int preferences_load(void) {
 // Save all settings from memory (struct) to file
 int preferences_save(void) {
     // Note sure if backup has value ?
-
+    if (session.incognito) {
+        PrintAndLogEx(INFO, "No preferences file will be saved");
+        return PM3_SUCCESS;
+    }
     PrintAndLogEx(INFO, "Saving preferences...");
 
     char *fn = prefGetFilename();
@@ -185,6 +195,7 @@ void preferences_save_callback(json_t *root) {
     JsonSaveInt(root, "window.overlay.ypos", session.overlay.y);
     JsonSaveInt(root, "window.overlay.hsize", session.overlay.h);
     JsonSaveInt(root, "window.overlay.wsize", session.overlay.w);
+    JsonSaveBoolean(root, "window.overlay.sliders", session.overlay_sliders);
 
     // Log level, convert to text
     switch (session.client_debug_level) {
@@ -199,6 +210,20 @@ void preferences_save_callback(json_t *root) {
             break;
         default:
             JsonSaveStr(root, "logging.level", "NORMAL");
+    }
+
+    switch (session.bar_mode) {
+        case STYLE_BAR:
+            JsonSaveStr(root, "show.bar.mode", "bar");
+            break;
+        case STYLE_MIXED:
+            JsonSaveStr(root, "show.bar.mode", "mixed");
+            break;
+        case STYLE_VALUE:
+            JsonSaveStr(root, "show.bar.mode", "value");
+            break;
+        default:
+            JsonSaveStr(root, "show.bar.mode", "value");
     }
     /*
         switch (session.device_debug_level) {
@@ -225,7 +250,7 @@ void preferences_save_callback(json_t *root) {
 
 void preferences_load_callback(json_t *root) {
     json_error_t up_error = {0};
-    bool b1;
+    int b1;
     int i1;
     const char *s1;
     char tempStr [500]; // to use str_lower() since json unpack uses const char *
@@ -270,6 +295,8 @@ void preferences_load_callback(json_t *root) {
         session.overlay.h = i1;
     if (json_unpack_ex(root, &up_error, 0, "{s:i}", "window.overlay.wsize", &i1) == 0)
         session.overlay.w = i1;
+    if (json_unpack_ex(root, &up_error, 0, "{s:b}", "window.overlay.sliders", &b1) == 0)
+        session.overlay_sliders = (bool)b1;
 
     // show options
     if (json_unpack_ex(root, &up_error, 0, "{s:s}", "show.emoji", &s1) == 0) {
@@ -282,10 +309,20 @@ void preferences_load_callback(json_t *root) {
     }
 
     if (json_unpack_ex(root, &up_error, 0, "{s:b}", "show.hints", &b1) == 0)
-        session.show_hints = b1;
+        session.show_hints = (bool)b1;
 
     if (json_unpack_ex(root, &up_error, 0, "{s:b}", "os.supports.colors", &b1) == 0)
-        session.supports_colors = b1;
+        session.supports_colors = (bool)b1;
+
+    // bar mode
+    if (json_unpack_ex(root, &up_error, 0, "{s:s}", "show.bar.mode", &s1) == 0) {
+        strncpy(tempStr, s1, sizeof(tempStr) - 1);
+        str_lower(tempStr);
+        if (strncmp(tempStr, "bar", 5) == 0) session.bar_mode = STYLE_BAR;
+        if (strncmp(tempStr, "mixed", 5) == 0) session.bar_mode = STYLE_MIXED;
+        if (strncmp(tempStr, "value", 7) == 0) session.bar_mode = STYLE_VALUE;
+    }
+
     /*
         // Logging Level
         if (json_unpack_ex(root, &up_error, 0, "{s:s}", "device.debug.level", &s1) == 0) {
@@ -331,6 +368,17 @@ static int usage_set_debug(void) {
     PrintAndLogEx(NORMAL, "     "_GREEN_("full")"        - full debug messages");
     return PM3_SUCCESS;
 }
+
+static int usage_set_bar_mode(void) {
+    PrintAndLogEx(NORMAL, "Usage: pref set barmode <bar | mixed | value>");
+    PrintAndLogEx(NORMAL, "Options:");
+    PrintAndLogEx(NORMAL, "     "_GREEN_("help")"        - This help");
+    PrintAndLogEx(NORMAL, "     "_GREEN_("bar")"         - measured values as bar only");
+    PrintAndLogEx(NORMAL, "     "_GREEN_("mixed")"       - measured values as numbers and bar");
+    PrintAndLogEx(NORMAL, "     "_GREEN_("value")"       - measured values");
+    return PM3_SUCCESS;
+}
+
 /*
 static int usage_set_devicedebug(void) {
     PrintAndLogEx(NORMAL, "Usage: pref set devicedebug <off | error | info | debug | extended>");
@@ -353,6 +401,16 @@ static int usage_set_hints(void) {
     PrintAndLogEx(NORMAL, "     "_GREEN_("on")"          - Display hints");
     return PM3_SUCCESS;
 }
+
+static int usage_set_plotsliders(void) {
+    PrintAndLogEx(NORMAL, "Usage: pref set plotsliders <on | off>");
+    PrintAndLogEx(NORMAL, "Options:");
+    PrintAndLogEx(NORMAL, "     "_GREEN_("help")"        - This help");
+    PrintAndLogEx(NORMAL, "     "_GREEN_("on")"          - show plot slider controls");
+    PrintAndLogEx(NORMAL, "     "_GREEN_("off")"         - hide plot slider controls");
+    return PM3_SUCCESS;
+}
+
 /*
 static int usage_set_savePaths(void) {
     PrintAndLogEx(NORMAL, "Usage: pref set savepaths [help] [create] [default <path>] [dump <path>] [trace <path>]");
@@ -490,6 +548,30 @@ static void showHintsState(prefShowOpt_t opt) {
         PrintAndLogEx(INFO, "   %s hints.................. "_GREEN_("on"), prefShowMsg(opt));
     else
         PrintAndLogEx(INFO, "   %s hints.................. "_WHITE_("off"), prefShowMsg(opt));
+}
+
+static void showPlotSliderState(prefShowOpt_t opt) {
+    if (session.overlay_sliders)
+        PrintAndLogEx(INFO, "   %s show plot sliders...... "_GREEN_("on"), prefShowMsg(opt));
+    else
+        PrintAndLogEx(INFO, "   %s show plot sliders...... "_WHITE_("off"), prefShowMsg(opt));
+}
+
+static void showBarModeState(prefShowOpt_t opt) {
+
+    switch (session.bar_mode) {
+        case STYLE_BAR:
+            PrintAndLogEx(INFO, "   %s barmode................ "_GREEN_("bar"), prefShowMsg(opt));
+            break;
+        case STYLE_MIXED:
+            PrintAndLogEx(INFO, "   %s barmode................ "_GREEN_("mixed"), prefShowMsg(opt));
+            break;
+        case STYLE_VALUE:
+            PrintAndLogEx(INFO, "   %s barmode................ "_GREEN_("value"), prefShowMsg(opt));
+            break;
+        default:
+            PrintAndLogEx(INFO, "   %s barmode............... "_RED_("unknown"), prefShowMsg(opt));
+    }
 }
 
 
@@ -688,7 +770,7 @@ static int setCmdDeviceDebug (const char *Cmd)
                     showDeviceDebugState (prefShowOLD);
                     session.device_debug_level = newValue;
                     showDeviceDebugState (prefShowNEW);
-                    preferences_save ();
+                    preferences_save();
                 } else {
                     PrintAndLogEx(INFO,"nothing changed");
                     showDeviceDebugState (prefShowNone);
@@ -755,6 +837,52 @@ static int setCmdHint(const char *Cmd) {
 
     return PM3_SUCCESS;
 }
+static int setCmdPlotSliders(const char *Cmd) {
+    uint8_t cmdp = 0;
+    bool errors = false;
+    bool validValue = false;
+    char strOpt[50];
+    bool newValue = session.overlay_sliders;
+
+    if (param_getchar(Cmd, cmdp) == 0x00)
+        return usage_set_plotsliders();
+
+    while ((param_getchar(Cmd, cmdp) != 0x00) && !errors) {
+
+        if (param_getstr(Cmd, cmdp++, strOpt, sizeof(strOpt)) != 0) {
+            str_lower(strOpt); // convert to lowercase
+
+            if (strncmp(strOpt, "help", 4) == 0)
+                return usage_set_plotsliders();
+            if (strncmp(strOpt, "off", 3) == 0) {
+                validValue = true;
+                newValue = false;
+            }
+            if (strncmp(strOpt, "on", 2) == 0) {
+                validValue = true;
+                newValue = true;
+            }
+
+            if (validValue) {
+                if (session.overlay_sliders != newValue) {// changed
+                    showPlotSliderState(prefShowOLD);
+                    session.overlay_sliders = newValue;
+                    showPlotSliderState(prefShowNEW);
+                    preferences_save();
+                } else {
+                    PrintAndLogEx(INFO, "nothing changed");
+                    showPlotSliderState(prefShowNone);
+                }
+            } else {
+                PrintAndLogEx(ERR, "invalid option");
+                return usage_set_plotsliders();
+            }
+        }
+    }
+
+    return PM3_SUCCESS;
+}
+
 /*
 static int setCmdSavePaths (const char *Cmd) {
     uint8_t cmdp = 0;
@@ -846,6 +974,57 @@ static int getCmdHelp(const char *Cmd) {
 }
 */
 
+static int setCmdBarMode(const char *Cmd) {
+    uint8_t cmdp = 0;
+    bool errors = false;
+    bool validValue = false;
+    char strOpt[50];
+    barMode_t newValue = session.bar_mode;
+
+    if (param_getchar(Cmd, cmdp) == 0x00)
+        return usage_set_bar_mode();
+
+    while ((param_getchar(Cmd, cmdp) != 0x00) && !errors) {
+
+        if (param_getstr(Cmd, cmdp++, strOpt, sizeof(strOpt)) != 0) {
+            str_lower(strOpt); // convert to lowercase
+
+            if (strncmp(strOpt, "help", 4) == 0)
+                return usage_set_bar_mode();
+
+            if (strncmp(strOpt, "bar", 3) == 0) {
+                validValue = true;
+                newValue = STYLE_BAR;
+            }
+            if (strncmp(strOpt, "mixed", 5) == 0) {
+                validValue = true;
+                newValue = STYLE_MIXED;
+            }
+            if (strncmp(strOpt, "value", 5) == 0) {
+                validValue = true;
+                newValue = STYLE_VALUE;
+            }
+
+            if (validValue) {
+                if (session.bar_mode != newValue) {// changed
+                    showBarModeState(prefShowOLD);
+                    session.bar_mode = newValue;
+                    showBarModeState(prefShowNEW);
+                    preferences_save();
+                } else {
+                    PrintAndLogEx(INFO, "nothing changed");
+                    showBarModeState(prefShowNone);
+                }
+            } else {
+                PrintAndLogEx(ERR, "invalid option");
+                return usage_set_bar_mode();
+            }
+        }
+    }
+
+    return PM3_SUCCESS;
+}
+
 static int getCmdEmoji(const char *Cmd) {
     showEmojiState(prefShowNone);
     return PM3_SUCCESS;
@@ -866,25 +1045,40 @@ static int getCmdDebug(const char *Cmd) {
     return PM3_SUCCESS;
 }
 
+static int getCmdPlotSlider(const char *Cmd) {
+    showPlotSliderState(prefShowNone);
+    return PM3_SUCCESS;
+}
+
+static int getCmdBarMode(const char *Cmd) {
+    showBarModeState(prefShowNone);
+    return PM3_SUCCESS;
+}
+
+
 static command_t getCommandTable[] = {
 //     {"help",             getCmdHelp,          AlwaysAvailable, "This help"},
-    {"emoji",            getCmdEmoji,         AlwaysAvailable, "Get emoji display preference"},
-    {"hints",            getCmdHint,          AlwaysAvailable, "Get hint display preference"},
+    {"barmode",          getCmdBarMode,       AlwaysAvailable, "Get bar mode preference"},
+    {"clientdebug",      getCmdDebug,         AlwaysAvailable, "Get client debug level preference"},
     {"color",            getCmdColor,         AlwaysAvailable, "Get color support preference"},
     //  {"defaultsavepaths", getCmdSavePaths,     AlwaysAvailable, "... to be adjusted next ... "},
-    {"clientdebug",      getCmdDebug,         AlwaysAvailable, "Get client debug level preference"},
     //  {"devicedebug",      getCmdDeviceDebug,   AlwaysAvailable, "Get device debug level"},
+    {"emoji",            getCmdEmoji,         AlwaysAvailable, "Get emoji display preference"},
+    {"hints",            getCmdHint,          AlwaysAvailable, "Get hint display preference"},
+    {"plotsliders",      getCmdPlotSlider,    AlwaysAvailable, "Get plot slider display preference"},
     {NULL, NULL, NULL, NULL}
 };
 
 static command_t setCommandTable[] = {
     {"help",             setCmdHelp,          AlwaysAvailable, "This help"},
+    {"barmode",          setCmdBarMode,       AlwaysAvailable, "Set bar mode"},
+    {"clientdebug",      setCmdDebug,         AlwaysAvailable, "Set client debug level"},
+    {"color",            setCmdColor,         AlwaysAvailable, "Set color support"},
     {"emoji",            setCmdEmoji,         AlwaysAvailable, "Set emoji display"},
     {"hints",            setCmdHint,          AlwaysAvailable, "Set hint display"},
-    {"color",            setCmdColor,         AlwaysAvailable, "Set color support"},
     //  {"defaultsavepaths", setCmdSavePaths,     AlwaysAvailable, "... to be adjusted next ... "},
-    {"clientdebug",      setCmdDebug,         AlwaysAvailable, "Set client debug level"},
     //  {"devicedebug",      setCmdDeviceDebug,   AlwaysAvailable, "Set device debug level"},
+    {"plotsliders", setCmdPlotSliders,         AlwaysAvailable, "Set plot slider display"},
     {NULL, NULL, NULL, NULL}
 };
 
@@ -912,8 +1106,7 @@ static int CmdPrefShow(const char *Cmd) {
         PrintAndLogEx(INFO, "Using "_YELLOW_("%s"), fn);
         free(fn);
     } else {
-        PrintAndLogEx(ERR, "Preferences not loaded");
-        return PM3_ESOFT;
+        PrintAndLogEx(WARNING, "Preferences file not loaded");
     }
 
     PrintAndLogEx(INFO, "Current settings");
@@ -925,9 +1118,11 @@ static int CmdPrefShow(const char *Cmd) {
     //  showSavePathState(spDefault, prefShowNone);
     //  showSavePathState(spDump, prefShowNone);
     //  showSavePathState(spTrace, prefShowNone);
-
     showClientDebugState(prefShowNone);
+    showPlotSliderState(prefShowNone);
 //    showDeviceDebugState(prefShowNone);
+
+    showBarModeState(prefShowNone);
     PrintAndLogEx(NORMAL, "");
     return PM3_SUCCESS;
 }

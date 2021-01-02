@@ -129,6 +129,16 @@ uint8_t *BigBuf_malloc(uint16_t chunksize) {
     return (uint8_t *)BigBuf + s_bigbuf_hi;
 }
 
+// allocate a chunk of memory from BigBuf, and returns a pointer to it.
+// sets the memory to zero
+uint8_t *BigBuf_calloc(uint16_t chunksize) {
+    uint8_t *mem = BigBuf_malloc(chunksize);
+    if (mem != NULL) {
+        memset(mem, 0x00, chunksize);
+    }
+    return mem;
+}
+
 // free ALL allocated chunks. The whole BigBuf is available for traces or samples again.
 void BigBuf_free(void) {
     s_bigbuf_hi = s_bigbuf_size;
@@ -292,6 +302,12 @@ void tosend_reset(void) {
 }
 
 void tosend_stuffbit(int b) {
+
+    if (toSend.max >= TOSEND_BUFFER_SIZE - 1) {
+        Dbprintf(_RED_("toSend overflow"));
+        return;
+    }
+
     if (toSend.bit >= 8) {
         toSend.max++;
         toSend.buf[toSend.max] = 0;
@@ -299,7 +315,7 @@ void tosend_stuffbit(int b) {
     }
 
     if (b)
-        toSend.buf[ toSend.max] |= (1 << (7 - toSend.bit));
+        toSend.buf[toSend.max] |= (1 << (7 - toSend.bit));
 
     toSend.bit++;
 

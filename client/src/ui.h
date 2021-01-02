@@ -13,6 +13,7 @@
 
 #include <pthread.h>
 #include "common.h"
+#include "comms.h"
 #include "ansi.h"
 
 #ifdef __cplusplus
@@ -21,6 +22,7 @@ extern "C" {
 
 #define _USE_MATH_DEFINES
 
+typedef enum {STYLE_BAR, STYLE_MIXED, STYLE_VALUE} barMode_t;
 typedef enum logLevel {NORMAL, SUCCESS, INFO, FAILED, WARNING, ERR, DEBUG, INPLACE, HINT} logLevel_t;
 typedef enum emojiMode {ALIAS, EMOJI, ALTTEXT, ERASE} emojiMode_t;
 typedef enum clientdebugLevel {cdbOFF, cdbSIMPLE, cdbFULL} clientdebugLevel_t;
@@ -40,10 +42,14 @@ typedef struct {
     bool window_changed; // track if plot/overlay pos/size changed to save on exit
     qtWindow_t plot;
     qtWindow_t overlay;
+    bool overlay_sliders;
+    bool incognito;
 //    char *defaultPaths[spItemCount]; // Array should allow loop searching for files
     clientdebugLevel_t client_debug_level;
+    barMode_t bar_mode;
 //    uint8_t device_debug_level;
     char *history_path;
+    pm3_device *current_device;
 } session_arg_t;
 
 extern session_arg_t session;
@@ -64,6 +70,8 @@ void memcpy_filter_emoji(void *dest, const void *src, size_t n, emojiMode_t mode
 int searchHomeFilePath(char **foundpath, const char *subdir, const char *filename, bool create_home);
 
 extern pthread_mutex_t print_lock;
+
+void print_progress(size_t count, uint64_t max, barMode_t style);
 
 void iceIIR_Butterworth(int *data, const size_t len);
 void iceSimple_Filter(int *data, const size_t len, uint8_t k);

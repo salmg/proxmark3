@@ -21,7 +21,7 @@
 |[Donations](#Donations)|[Maintainers](/doc/md/Development/Maintainers.md)|[Command Cheat sheet](/doc/cheatsheet.md)|
 ||[Advanced compilation parameters](/doc/md/Use_of_Proxmark/4_Advanced-compilation-parameters.md)|[More cheat sheets](https://github.com/RfidResearchGroup/proxmark3/wiki/More-cheat-sheets)|
 ||**[Troubleshooting](/doc/md/Installation_Instructions/Troubleshooting.md)**|[Complete client command set](/doc/commands.md)|
-||**[JTAG](/doc/jtag_notes.md)**||
+||**[JTAG](/doc/jtag_notes.md)**|[T55xx Guide](/doc/T5577_Guide.md)|
 
 
 ## Notes / helpful documents
@@ -30,11 +30,11 @@
 | ------------------- |:-------------------:| -------------------:|
 |[Notes on UART](/doc/uart_notes.md)|[Notes on Termux / Android](/doc/termux_notes.md)|[Notes on paths](/doc/path_notes.md)|
 |[Notes on frame format](/doc/new_frame_format.md)|[Notes on tracelog / wireshark](/doc/trace_notes.md)|[Notes on EMV](/doc/emv_notes.md)|
-|[Notes on external flash](/doc/ext_flash_notes.md)|[Notes on loclass](/doc/loclass_notes.md)|[Notes on Coverity Scan Config & Run](/doc/md/Development/Coverity-Scan-Config-%26-Run.md)|
+|[Notes on external flash](/doc/ext_flash_notes.md)|[Notes on loclass](/doc/loclass_notes.md)|[Notes on Coverity Scan Config & Run](/doc/md/Development/Coverity-Scan-Config-and-Run.md)|
 |[Notes on file formats used with Proxmark3](/doc/extensions_notes.md)|[Notes on MFU binary format](/doc/mfu_binary_format_notes.md)|[Notes on FPGA & ARM](/doc/fpga_arm_notes.md)|
 |[Developing standalone mode](/armsrc/Standalone/readme.md)|[Wiki about standalone mode](https://github.com/RfidResearchGroup/proxmark3/wiki/Standalone-mode)|[Notes on Magic cards](/doc/magic_cards_notes.md)|
 |[Notes on Color usage](/doc/colors_notes.md)|[Makefile vs CMake](/doc/md/Development/Makefile-vs-CMake.md)|[Notes on Cloner guns](/doc/cloner_notes.md)|
-
+|[Notes on cliparser usage](/doc/cliparser.md)|[Notes on clocks](/doc/clocks.md)||
 
 ## Build for non-RDV4 Proxmark3 platforms
 
@@ -57,7 +57,7 @@ On the software side: quite a lot, see the [Changelog file](CHANGELOG.md).
 
 This repo compiles nicely on 
    - Proxspace v3.x
-     - [latest release v3.6](https://github.com/Gator96100/ProxSpace/releases)
+     - [latest release v3.7.1](https://github.com/Gator96100/ProxSpace/releases)
    - Windows/mingw environment with Qt5.6.1 & GCC 4.9
    - Ubuntu 16.04 -> 20.04
    - ParrotOS, Gentoo, Pentoo, Kali, Nethunter, Archlinux, Fedora, Debian
@@ -111,7 +111,7 @@ Next place to visit is the [Proxmark Forum](http://www.proxmark.org/forum/index.
    - [Proxmark3 IRC channel](http://webchat.freenode.net/?channels=#proxmark3)
    - [Proxmark3 sub reddit](https://www.reddit.com/r/proxmark3/)
    - [Twitter](https://twitter.com/proxmark3/)
-   - [Proxmark3 community discord server](https://discord.gg/zjxc8ZB)
+   - [Proxmark3 community discord server](https://discord.gg/QfPvGFRQxH)
  
  _no slack channel_
 
@@ -134,12 +134,6 @@ The separation from official Proxmark3 repo gives us a lot of freedom to create 
 
 The official PM3-GUI from Gaucho will not work.
 The new [Proxmark3 Universal GUI](https://github.com/burma69/PM3UniversalGUI) will work more or less. Change is needed in order to show helptext when client isn't connected to a device.  We don't know how active the maintainers.
-
-## The end
-
-- July 2018 [@herrmann1001](https://mobile.twitter.com/herrmann1001)
-- updated Feb 2019 [@5w0rdfish](https://mobile.twitter.com/5w0rdFish)
-- updated 2019 [@doegox](https://mobile.twitter.com/doegox)
 
 # Donations
 
