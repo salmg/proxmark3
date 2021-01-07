@@ -349,7 +349,6 @@ void RunMod() {
                     if ((receivedCmd[0] == 0x02 || receivedCmd[0] == 0x03) && len > 3) { // Process reader commands
 
                         if (resp == 1) {
-                            DbpString(_YELLOW_("[ ") "New command - send it & wait for Bluetooth response!" _YELLOW_(" ]"));
                             prevcmd = receivedCmd[0];
                             bufferlen = len - 3;
                             memcpy(&buffert[0], &bufferlen, 1);
@@ -364,6 +363,7 @@ void RunMod() {
                             lenpacket = 0;
                             resp = 1;
                         } else {
+                            DbpString(_YELLOW_("[ ") "New command: sent it & waiting for Bluetooth response!" _YELLOW_(" ]"));
                             usart_writebuffer_sync(buffert, bufferlen + 1);
                             p_response = NULL;
                         }
